@@ -1,0 +1,26 @@
+# Tags do goodbooks-10k que descrevem a relação do leitor com o livro, não o livro (SPEC §6.1).
+to-read
+currently-reading
+favorites
+favourites
+owned
+books-i-own
+owned-books
+my-books
+my-library
+kindle
+ebook
+ebooks
+e-book
+library
+default
+wish-list
+wishlist
+to-buy
+audiobook
+audiobooks
+audio
+re-read
+abandoned
+dnf
+book-club

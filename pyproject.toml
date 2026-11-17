@@ -1,0 +1,68 @@
+[project]
+name = "recomendador"
+version = "0.1.0"
+description = "Recomendador de livros pessoal: registra Leituras e sugere Obras com Motivo."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "pydantic-settings>=2.4",
+    "httpx>=0.27",
+    "numpy>=2.1",
+    "scipy>=1.14",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "rapidfuzz>=3.9",
+    "pyyaml>=6.0",
+    "streamlit>=1.40",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# Fase 2+: embeddings na GPU. Instalar com `uv sync --extra ml`.
+ml = [
+    "torch>=2.7",
+    "sentence-transformers>=3.3",
+]
+
+[project.scripts]
+recomendador = "recomendador.__main__:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recomendador"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "externo: chama APIs externas reais (fora da execução padrão)",
+    "gpu: precisa de GPU (fora da execução padrão)",
+]
+addopts = "-m 'not externo and not gpu'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,56 @@
+# Lista curada de Gêneros (SPEC §6.3). PROPOSTA INICIAL: revisar antes da fase 1.
+# Cada Gênero lista as tags do goodbooks-10k que o representam.
+- slug: fantasia
+  nome: Fantasia
+  tags: [fantasy, epic-fantasy, urban-fantasy, high-fantasy, magic]
+- slug: ficcao-cientifica
+  nome: Ficção científica
+  tags: [science-fiction, sci-fi, scifi, dystopia, dystopian, space-opera, cyberpunk]
+- slug: terror
+  nome: Terror
+  tags: [horror]
+- slug: suspense
+  nome: Suspense e thriller
+  tags: [thriller, suspense, psychological-thriller]
+- slug: misterio
+  nome: Mistério e policial
+  tags: [mystery, crime, detective, murder-mystery]
+- slug: romance-amoroso
+  nome: Romance amoroso
+  tags: [romance, contemporary-romance, historical-romance]
+- slug: ficcao-historica
+  nome: Ficção histórica
+  tags: [historical-fiction]
+- slug: classicos
+  nome: Clássicos
+  tags: [classics, classic, classic-literature]
+- slug: ficcao-contemporanea
+  nome: Ficção contemporânea
+  tags: [literary-fiction, contemporary, contemporary-fiction]
+- slug: jovem-adulto
+  nome: Jovem adulto
+  tags: [young-adult, ya, teen]
+- slug: infantil
+  nome: Infantil
+  tags: [childrens, children, picture-books, middle-grade]
+- slug: biografias
+  nome: Biografias e memórias
+  tags: [biography, memoir, memoirs, autobiography]
+- slug: historia
+  nome: História
+  tags: [history, world-war-ii, wwii]
+- slug: ciencia
+  nome: Ciência e divulgação
+  tags: [science, popular-science, psychology]
+- slug: negocios-autoajuda
+  nome: Negócios e autoajuda
+  tags: [business, self-help, personal-development, productivity]
+- slug: filosofia-religiao
+  nome: Filosofia e religião
+  tags: [philosophy, religion, spirituality]
+- slug: poesia
+  nome: Poesia
+  tags: [poetry]
+- slug: quadrinhos
+  nome: Quadrinhos
+  tags: [graphic-novels, comics, manga]

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Ambiente
+.env
+
+# Dados e saídas locais (grandes ou pessoais)
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE / SO
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
