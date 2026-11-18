@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from sqlalchemy import text
 
 app = typer.Typer(
     help="Recomendador de livros: comandos de banco e pipeline.", no_args_is_help=True
@@ -108,10 +109,100 @@ def mapear_generos() -> None:
         mapear(conn)
 
 
+def _pasta_embeddings() -> Path:
+    from recomendador.config import config
+
+    return config().data_dir / "embeddings"
+
+
 @app.command("calcular-conteudo")
-def calcular_conteudo() -> None:
+def calcular_conteudo(
+    modelo: Annotated[str, typer.Option(help="Modelo do Hugging Face (SPEC §8.4.1).")],
+) -> None:
     """Gera embeddings e Vizinhos de conteúdo numa execução inativa (SPEC §8.2)."""
-    _pendente("fase 2")
+    from recomendador.pipeline.conteudo import calcular_conteudo as calcular
+    from recomendador.recomendacao.embeddings import ModeloSentenceTransformers
+
+    codificador = ModeloSentenceTransformers(modelo)
+    with _engine().begin() as conn:
+        r = calcular(conn, codificador, _pasta_embeddings())
+    typer.echo(f"Execução {r.execucao_id} criada (inativa): {r.obras} Obras, {r.vizinhos} Vizinhos")
+
+
+@app.command("bakeoff")
+def bakeoff(
+    modelos: Annotated[
+        list[str] | None, typer.Option("--modelo", help="Finalista (repetível). Padrão: os 3.")
+    ] = None,
+    leitores: Annotated[int, typer.Option(help="Leitores da avaliação (SPEC §9.1).")] = 5000,
+    refazer_pares: Annotated[
+        bool, typer.Option(help="Escolhe de novo os 20 pares do teste entre idiomas.")
+    ] = False,
+) -> None:
+    """Bake-off do modelo de embedding (SPEC §8.4): uma execução inativa por finalista,
+    teste entre idiomas, tempo de uma Obra e avaliação offline. Não ativa nada."""
+    import statistics
+    import time
+
+    import numpy as np
+
+    from recomendador.catalogo.fontes.google_books import GoogleBooks
+    from recomendador.config import config
+    from recomendador.pipeline import bakeoff as b
+    from recomendador.pipeline.avaliacao import avaliar as avaliar_execucoes
+    from recomendador.pipeline.avaliacao import carregar_notas, dividir
+    from recomendador.pipeline.conteudo import calcular_conteudo as calcular
+    from recomendador.recomendacao.embeddings import FORMATOS, ModeloSentenceTransformers
+
+    arquivo = Path("tests/dados/pares_pt_en.yaml")
+    cache = config().data_dir / "bakeoff" / "pares_pt_en.json"
+    google = GoogleBooks(config().google_books_api_key, timeout=10)
+    try:
+        with _engine().begin() as conn:
+            if refazer_pares or not arquivo.exists():
+                pares = b.escolher_pares(conn, google)
+                b.gravar_pares(pares, arquivo, cache)
+            else:
+                pares = b.carregar_pares(arquivo, cache, google)
+            obra_por_gb = dict(
+                conn.execute(
+                    text(
+                        "SELECT goodbooks_book_id, id FROM obra WHERE goodbooks_book_id IS NOT NULL"
+                    )
+                ).all()
+            )
+    finally:
+        google.fechar()
+    log.info("Teste entre idiomas com %d pares", len(pares))
+
+    extras: dict[int, dict] = {}
+    for modelo in modelos or list(FORMATOS):
+        cod = ModeloSentenceTransformers(modelo)
+        with _engine().begin() as conn:
+            r = calcular(conn, cod, _pasta_embeddings())
+        with np.load(_pasta_embeddings() / f"conteudo-{r.execucao_id}.npz") as d:
+            ids, e = d["ids"], d["embeddings"]
+        idiomas = b.conferir_entre_idiomas(cod, pares, obra_por_gb, ids, e)
+        tempos = []
+        for p in pares[:10]:
+            inicio = time.perf_counter()
+            cod.codificar([p.texto()])
+            tempos.append(1000 * (time.perf_counter() - inicio))
+        extras[r.execucao_id] = {
+            "entre_idiomas": idiomas.resumo(),
+            "entre_idiomas_passou": idiomas.passou,
+            "ms_uma_obra": round(statistics.median(tempos)),
+            "s_catalogo": round(r.segundos_embedding),
+        }
+        log.info("%s: execução %d, %s", modelo, r.execucao_id, extras[r.execucao_id])
+        cod.liberar()
+
+    with _engine().begin() as conn:
+        notas = carregar_notas(conn, config().data_dir / "raw" / "notas.parquet")
+        resultado = avaliar_execucoes(
+            conn, list(extras), dividir(notas, n_leitores=leitores), Path("reports"), extras
+        )
+    typer.echo(f"Relatório em {resultado.relatorio}")
 
 
 @app.command("calcular-coleitura")
@@ -121,15 +212,39 @@ def calcular_coleitura() -> None:
 
 
 @app.command("avaliar")
-def avaliar() -> None:
+def avaliar(
+    execucoes: Annotated[list[int], typer.Argument(help="Ids das execuções a avaliar.")],
+    leitores: Annotated[int, typer.Option(help="Leitores da amostra (SPEC §9.1).")] = 5000,
+) -> None:
     """Avaliação offline: Recall@20, NDCG@20 e cobertura (SPEC §9)."""
-    _pendente("fase 2")
+    from recomendador.config import config
+    from recomendador.pipeline.avaliacao import avaliar as avaliar_execucoes
+    from recomendador.pipeline.avaliacao import carregar_notas, dividir
+
+    with _engine().begin() as conn:
+        notas = carregar_notas(conn, config().data_dir / "raw" / "notas.parquet")
+        divisao = dividir(notas, n_leitores=leitores)
+        r = avaliar_execucoes(conn, execucoes, divisao, Path("reports"))
+    typer.echo(f"Relatório em {r.relatorio}")
 
 
 @app.command("ativar")
-def ativar() -> None:
-    """Torna uma execução de modelo a ativa do seu tipo."""
-    _pendente("fase 2")
+def ativar(
+    execucao_id: Annotated[int, typer.Argument(help="Id da execução em execucao_modelo.")],
+    forcar: Annotated[
+        bool, typer.Option(help="Ativa mesmo sem avaliação ou com NDCG@20 menor que o da ativa.")
+    ] = False,
+) -> None:
+    """Torna uma execução de modelo a ativa do seu tipo (SPEC §9.4)."""
+    from recomendador.pipeline.execucoes import AtivacaoRecusada
+    from recomendador.pipeline.execucoes import ativar as ativar_execucao
+
+    try:
+        with _engine().begin() as conn:
+            ativar_execucao(conn, execucao_id, _pasta_embeddings(), forcar=forcar)
+    except AtivacaoRecusada as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("recalcular")
@@ -142,9 +257,9 @@ def recalcular() -> None:
 def atualizar() -> None:
     """Rotina de abertura do app (SPEC §10), em no máximo 10 min.
 
-    1. Migrações. 3. Enriquece pela Open Library até 100 Obras do Leitor pendentes.
-    4. Grava `ultima_atualizacao`. O passo 2 (embeddings das Obras do Leitor) entra na
-    fase 2, com o modelo do bake-off.
+    1. Migrações. 2. Embeddings e Vizinhos de conteúdo das Obras do Leitor pendentes.
+    3. Enriquece pela Open Library até 100 Obras do Leitor pendentes.
+    4. Grava `ultima_atualizacao`.
     """
     import time
 
@@ -155,6 +270,7 @@ def atualizar() -> None:
 
     prazo = time.monotonic() + _PRAZO_DO_ATUALIZAR_S
     aplicar_migracoes()
+    _embeddings_do_leitor(prazo)
     ol = OpenLibrary(config().open_library_user_agent)
     try:
         with _engine().begin() as conn:
@@ -167,6 +283,27 @@ def atualizar() -> None:
 
 
 _PRAZO_DO_ATUALIZAR_S = 10 * 60
+
+
+def _embeddings_do_leitor(prazo: float) -> None:
+    """Passo 2 do `atualizar`. O modelo só é carregado se houver Obra pendente."""
+    from recomendador.pipeline.interativo import embeddings_pendentes, obras_pendentes
+    from recomendador.recomendacao.interativo import (
+        carregar_codificador,
+        modelo_de_conteudo_ativo,
+    )
+
+    with _engine().begin() as conn:
+        pendentes = obras_pendentes(conn)
+        modelo = modelo_de_conteudo_ativo(conn)
+    if not pendentes or modelo is None:
+        return
+    try:
+        cod = carregar_codificador(modelo)
+        with _engine().begin() as conn:
+            embeddings_pendentes(conn, cod, prazo)
+    except Exception:  # o app abre mesmo assim (SPEC §10)
+        log.exception("Embeddings das Obras do Leitor ficaram para a próxima abertura")
 
 
 if __name__ == "__main__":
