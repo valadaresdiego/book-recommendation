@@ -16,12 +16,13 @@ from pathlib import Path
 
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.fontes.open_library import assuntos as assuntos_ol
+from recomendador.catalogo.fontes.open_library import texto_descricao
 from recomendador.catalogo.isbn import normalizar_isbn
 
 log = logging.getLogger(__name__)
 
 COBERTURA_MINIMA_DESCRICAO = 0.70
-ASSUNTOS_POR_OBRA = 30
 _PROGRESSO_A_CADA = 5_000_000
 
 _RE_ISBNS = re.compile(r'"isbn_1[03]"\s*:\s*\[([^\]]*)\]')
@@ -29,6 +30,7 @@ _RE_ITEM = re.compile(r'"([^"]*)"')
 _RE_WORK = re.compile(r'"works"\s*:\s*\[\s*\{\s*"key"\s*:\s*"(/works/[^"]+)"')
 _RE_ANO = re.compile(r"\b(\d{4})\b")
 _PORTUGUES = "/languages/por"
+_PREFIXOS_BR = ("97885", "97865")  # ISBNs da Agência Brasileira
 
 
 class DumpAusente(FileNotFoundError):
@@ -137,36 +139,33 @@ def _coletar_edicoes(
 ) -> tuple[list[tuple[str, int]], dict[int, str]]:
     """Passada 2: todos os ISBNs das works escolhidas e o título pt mais recente de cada Obra."""
     isbns: list[tuple[str, int]] = []
-    titulo_pt: dict[int, tuple[int, str]] = {}
+    titulo_pt: dict[int, tuple[int, int, str]] = {}
     for linha in _linhas(editions):
         m = _RE_WORK.search(linha)
         if not m or m.group(1) not in obra_por_work or (dados := _json(linha)) is None:
             continue
         obra_id = obra_por_work[m.group(1)]
         isbns.extend((i, obra_id) for i in _isbns_da_edicao(dados))
-        idiomas = {i.get("key") for i in dados.get("languages") or [] if isinstance(i, dict)}
         titulo = (dados.get("title") or "").strip()
-        if _PORTUGUES in idiomas and titulo:
-            candidato = (_ano(dados.get("publish_date")), titulo)
+        if titulo and (portugues := _em_portugues(dados)):
+            candidato = (portugues, _ano(dados.get("publish_date")), titulo)
             if obra_id not in titulo_pt or candidato > titulo_pt[obra_id]:
                 titulo_pt[obra_id] = candidato
-    return isbns, {o: t for o, (_, t) in titulo_pt.items()}
+    return isbns, {o: t for o, (_, _, t) in titulo_pt.items()}
 
 
-def _texto_descricao(valor: object) -> str | None:
-    if isinstance(valor, dict):
-        valor = valor.get("value")
-    if isinstance(valor, str) and valor.strip():
-        return valor.strip()
-    return None
+def _em_portugues(dados: dict) -> int:
+    """2 se a Edição declara português; 1 se não declara idioma e tem ISBN brasileiro; 0 se não.
 
-
-def _assuntos(valor: object) -> list[str]:
-    vistos: dict[str, None] = {}
-    for s in valor if isinstance(valor, list) else []:
-        if isinstance(s, str) and (limpo := " ".join(s.split()).lower()) and len(limpo) <= 100:
-            vistos.setdefault(limpo)
-    return list(vistos)[:ASSUNTOS_POR_OBRA]
+    A reserva pelo ISBN (prefixos 978-85 e 978-65) cobre as Edições brasileiras que a
+    Open Library cadastrou sem `languages`. Uma Edição que declara português vence sempre.
+    """
+    idiomas = {i.get("key") for i in dados.get("languages") or [] if isinstance(i, dict)}
+    if _PORTUGUES in idiomas:
+        return 2
+    if not idiomas and any(i.startswith(_PREFIXOS_BR) for i in _isbns_da_edicao(dados)):
+        return 1
+    return 0
 
 
 def _coletar_works(
@@ -180,9 +179,9 @@ def _coletar_works(
         if len(partes) < 2 or partes[1] not in obra_por_work or (dados := _json(linha)) is None:
             continue
         obra_id = obra_por_work[partes[1]]
-        if d := _texto_descricao(dados.get("description")):
+        if d := texto_descricao(dados.get("description")):
             descricoes[obra_id] = d
-        if a := _assuntos(dados.get("subjects")):
+        if a := assuntos_ol(dados.get("subjects")):
             assuntos[obra_id] = a
     return descricoes, assuntos
 

@@ -15,6 +15,14 @@ _Evite_: volume, versão, livro
 **Título original**:
 O título da Obra no idioma em que foi publicada pela primeira vez. Liga uma Edição traduzida à sua Obra.
 
+**Resolução**:
+A identificação da Obra a que pertence uma Edição escolhida na busca: pelo ISBN, pela work da Open Library, pelo título original com o autor ou, se nada casar, uma Obra nova.
+_Evite_: correspondência, match, vinculação
+
+**Candidata**:
+Uma Obra do Catálogo parecida com a Edição escolhida, oferecida ao Leitor na pergunta "É uma destas?" quando a Resolução não acha a Obra sozinha.
+_Evite_: sugestão (é outro conceito), opção
+
 **Gênero**:
 Uma categoria de uma lista fixa e curada (cerca de 15), à qual cada Obra pode pertencer. Não confundir com as tags livres herdadas da Base de coleitura.
 _Evite_: categoria, tag, assunto

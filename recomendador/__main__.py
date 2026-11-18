@@ -140,17 +140,33 @@ def recalcular() -> None:
 
 @app.command("atualizar")
 def atualizar() -> None:
-    """Rotina de abertura do app (SPEC §10): migrações e `ultima_atualizacao`.
+    """Rotina de abertura do app (SPEC §10), em no máximo 10 min.
 
-    Os passos 2 (embeddings das Obras do Leitor) e 3 (enriquecimento pela API da Open
-    Library) entram nas fases 2 e 1, junto com o que eles atualizam.
+    1. Migrações. 3. Enriquece pela Open Library até 100 Obras do Leitor pendentes.
+    4. Grava `ultima_atualizacao`. O passo 2 (embeddings das Obras do Leitor) entra na
+    fase 2, com o modelo do bake-off.
     """
-    from recomendador.db.migracoes import aplicar_migracoes, gravar_config
+    import time
 
+    from recomendador.catalogo.fontes.open_library import OpenLibrary
+    from recomendador.config import config
+    from recomendador.db.migracoes import aplicar_migracoes, gravar_config
+    from recomendador.pipeline.enriquecimento_leitor import enriquecer_obras_do_leitor
+
+    prazo = time.monotonic() + _PRAZO_DO_ATUALIZAR_S
     aplicar_migracoes()
+    ol = OpenLibrary(config().open_library_user_agent)
+    try:
+        with _engine().begin() as conn:
+            enriquecer_obras_do_leitor(conn, ol, prazo=prazo)
+    finally:
+        ol.fechar()
     with _engine().begin() as conn:
         gravar_config(conn, "ultima_atualizacao", datetime.now(UTC).isoformat())
     log.info("Atualização concluída")
+
+
+_PRAZO_DO_ATUALIZAR_S = 10 * 60
 
 
 if __name__ == "__main__":

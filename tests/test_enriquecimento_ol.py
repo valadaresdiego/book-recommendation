@@ -32,11 +32,9 @@ def _dump(caminho: Path, tipo: str, registros: list[tuple[str, dict | str]]) -> 
 
 
 def _edicao(work: str, isbn13=(), isbn10=(), idioma="eng", titulo="x", data=None) -> dict:
-    d: dict = {
-        "title": titulo,
-        "works": [{"key": work}],
-        "languages": [{"key": f"/languages/{idioma}"}],
-    }
+    d: dict = {"title": titulo, "works": [{"key": work}]}
+    if idioma:
+        d["languages"] = [{"key": f"/languages/{idioma}"}]
     if isbn13:
         d["isbn_13"] = list(isbn13)
     if isbn10:
@@ -204,3 +202,49 @@ def test_escolher_works() -> None:
 def test_dump_ausente(conexao: Connection, tmp_path: Path) -> None:
     with pytest.raises(DumpAusente, match="ol_dump_editions"):
         enriquecer_ol(conexao, tmp_path)
+
+
+def test_isbn_brasileiro_vale_como_edicao_em_portugues_sem_idioma(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    """Edição sem `languages` e com ISBN 978-85 ou 978-65 conta como Edição em português."""
+    fundacao_br = completar_isbn13("978857657001")
+    neuromancer_br = completar_isbn13("978655532001")
+    _dump(
+        tmp_path / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [
+            ("/books/OL1M", _edicao("/works/OL3W", isbn13=[FUNDACAO])),
+            (
+                "/books/OL2M",
+                _edicao("/works/OL3W", [fundacao_br], idioma=None, titulo="Fundação", data="2009"),
+            ),
+            ("/books/OL3M", _edicao("/works/OL5W", isbn13=[NEUROMANCER])),
+            # Com idioma declarado, a Edição em português vence a inferida pelo ISBN,
+            # mesmo sendo mais antiga.
+            (
+                "/books/OL4M",
+                _edicao("/works/OL5W", idioma="por", titulo="Neuromancer", data="1991"),
+            ),
+            (
+                "/books/OL5M",
+                _edicao(
+                    "/works/OL5W", [neuromancer_br], idioma=None, titulo="Neuromante", data="2016"
+                ),
+            ),
+            # Sem idioma e com ISBN de fora do Brasil: não conta.
+            (
+                "/books/OL6M",
+                _edicao("/works/OL3W", [FUNDACAO_OUTRA], idioma=None, titulo="Fundación"),
+            ),
+        ],
+    )
+    _dump(tmp_path / "ol_dump_works_2026-10-31.txt.gz", "work", [])
+    fundacao = _obra(conexao, "Foundation", FUNDACAO)
+    neuromancer = _obra(conexao, "Neuromancer", NEUROMANCER)
+
+    resumo = enriquecer_ol(conexao, tmp_path)
+
+    assert _linha(conexao, fundacao)["titulo_exibicao"] == "Fundação"
+    assert _linha(conexao, neuromancer)["titulo_exibicao"] == "Neuromancer"
+    assert resumo.com_titulo_pt == 2

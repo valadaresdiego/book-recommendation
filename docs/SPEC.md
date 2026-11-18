@@ -124,6 +124,7 @@ obra            id bigserial PK
                 enriquecida_em timestamptz null
                 criado_em
                 índices: GIN trigram em (titulo, titulo_original, titulo_exibicao);
+                         GIN trigram em obra_texto_busca(títulos, autores), sem acento (§7.1);
                          HNSW (vector_cosine_ops) em embedding
 
 obra_isbn       isbn13 char(13) PK · obra_id FK      -- todos os ISBNs conhecidos de cada Obra
@@ -177,7 +178,7 @@ Decisões do modelo:
 | Open Library (API) | Resolver a Edição escolhida na busca e enriquecer as Obras adicionadas pelo Leitor | `/isbn/{isbn}.json`, `/works/{key}.json`, com `User-Agent` identificado | Máx. 1 req/s, garantido por um limitador no cliente. Usar só para o volume de um Leitor. |
 | Google Books | Busca do R1 | `GET /books/v1/volumes?q=…&maxResults=20&printType=books&key=…` | Cache só durante a sessão (TTL de 1 h, `st.cache_data`). O que é persistido em `edicao` e `obra` vem de preferência da Open Library, e a capa entra por URL (ver research/fontes-de-dados.md). |
 
-Os clientes ficam em `catalogo/fontes/`. Eles têm timeout (2 s para a busca, 10 s no pipeline) e devolvem tipos próprios (`ResultadoBusca`, `EdicaoOL`, `ObraOL`), nunca o JSON cru.
+Os clientes ficam em `catalogo/fontes/`. Eles têm timeout (1,8 s na busca do Google Books, para a busca inteira caber em 2 s; 10 s na Open Library) e devolvem tipos próprios (`ResultadoBusca`, `EdicaoOL`, `ObraOL`), nunca o JSON cru.
 
 ---
 
@@ -216,7 +217,7 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 
 Processamento em streaming, sem carregar os dumps inteiros na memória:
 
-1. **Editions**: para cada Edição do dump com ISBN presente em `obra_isbn`, marca o `work_key` dela para a Obra (vale o mais frequente). Uma segunda passada sobre o dump de editions coleta **todos** os ISBNs dessas works para `obra_isbn` (é o que faz as Edições brasileiras caírem direto no passo 1 do §7.2). A mesma passada grava, por Obra, o título da Edição em português de data mais recente (`languages` contém `/languages/por`) como `titulo_exibicao`. Sem Edição em português, `titulo_exibicao = titulo`.
+1. **Editions**: para cada Edição do dump com ISBN presente em `obra_isbn`, marca o `work_key` dela para a Obra (vale o mais frequente). Uma segunda passada sobre o dump de editions coleta **todos** os ISBNs dessas works para `obra_isbn` (é o que faz as Edições brasileiras caírem direto no passo 1 do §7.2). A mesma passada grava, por Obra, o título da Edição em português de data mais recente (`languages` contém `/languages/por`) como `titulo_exibicao`. Uma Edição sem `languages` e com ISBN brasileiro (prefixos 978-85 e 978-65) também conta como em português, mas só na falta de uma que declare o idioma (decisão do Leitor, 18/11/2026). Sem Edição em português, `titulo_exibicao = titulo`.
 2. **Works**: para as works marcadas, preenche `descricao` (se a Obra não tiver), os assuntos (`subjects`, que entram em `obra_tag` com `contagem = 0` para não competir com as tags de leitores) e `ol_work_key`.
 3. Marca `enriquecida_em`.
 
@@ -258,7 +259,9 @@ Lista inicial, a revisar pelo Leitor antes da fase 1. Fica em `catalogo/generos.
 `catalogo.buscar(texto) -> list[ResultadoBusca]`, com duas fontes em paralelo:
 
 1. **Catálogo local**: busca por trigram em `titulo`, `titulo_original`, `titulo_exibicao` e `autores`, mais igualdade em `obra_isbn` se o texto for um ISBN. Resultados marcados como "no catálogo", sem precisar de resolução.
-2. **Google Books**: `q` montado por heurística. Texto com só dígitos e hífens de 10 ou 13 dígitos vira `isbn:…`; o resto vai como texto livre. Resultados cujo ISBN já está em `obra_isbn` são fundidos ao item do catálogo correspondente.
+   - Títulos e autores vão num texto só, em minúsculas e sem acento (`obra_texto_busca`, com `unaccent`, migração 0003), com um índice GIN trigram. "fundacao asimov" acha *Fundação*.
+   - Cada palavra útil da busca (sem "de", "o", "the"…) é comparada com esse texto por `word_similarity`, e a semelhança da Obra é a média entre as palavras (mínimo 0,5). "duna herbert" precisa casar com as duas palavras: *Lincoln*, de David **Herbert** Donald, fica abaixo de *Duna*. Empates vão para a mais popular.
+2. **Google Books**: `q` montado por heurística. Texto com só dígitos e hífens de 10 ou 13 dígitos vira `isbn:…`; o resto vai como texto livre. Resultados cujo ISBN já está em `obra_isbn` são fundidos ao item do catálogo correspondente: uma Edição em português toma o lugar dele (é o título que o Leitor reconhece); em outro idioma, o item do Catálogo fica como está, sem repetir a Obra.
 
 A lista mostra primeiro os itens do catálogo e depois os do Google Books, com capa, título, autor e ano. Meta: **≤ 2 s no p95**. Se o Google Books estourar o timeout, mostra só os resultados locais e um aviso discreto.
 
@@ -273,8 +276,11 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 | 3 | Título original (de `translation_of` ou `work_titles` da Edição na OL, ou o título da work) + último sobrenome do 1º autor bate com uma Obra (`rapidfuzz.token_set_ratio ≥ 90` no título e sobrenome igual depois de normalizar acentos) | Obra existente (`'titulo_original'`) |
 | 4 | Nenhuma das anteriores | Cria uma Obra `origem='leitor'` com os dados da OL (ou do Google Books, se a OL não tiver) e devolve `candidatas`: as 5 Obras do Catálogo mais próximas por trigram de título e autor |
 
-- No caso 4, a UI pergunta **"É uma destas?"**. Escolher uma candidata **funde** a Obra nova nela: move a Leitura e a Edição e apaga a Obra nova. "Nenhuma" mantém a Obra nova.
-- Em qualquer caso, a Edição escolhida é gravada em `edicao`, ligada à Obra.
+- `resolver_obra` **não grava nada**: devolve a Obra encontrada ou, no caso 4, a proposta da Obra nova e as candidatas. `registrar_resolucao` grava quando o Leitor salva a Leitura, na mesma transação. Assim, uma busca abandonada não deixa Obra órfã no Catálogo, e não é preciso fundir Obras depois.
+- No caso 4, a UI pergunta **"É uma destas?"**. Escolher uma candidata grava a Edição e a Leitura nela; "Nenhuma" cria a Obra nova. O Leitor também pode informar o título original à mão (R1): `informar_titulo_original` reaplica a regra 3 com ele.
+- Na regra 3, o título da própria Edição também entra entre os títulos comparados (cobre as Edições no idioma original e funciona com a Open Library fora do ar). `token_set_ratio` dá 100 para "Dune" × "Dune Messiah"; o `ratio` simples desempata. O sobrenome ignora sufixos como Jr., Junior, Filho e Neto.
+- Em qualquer caso, a Edição escolhida é gravada em `edicao`, ligada à Obra, e os ISBNs dela entram em `obra_isbn` (a próxima busca resolve pela regra 1). Se a Edição é em português e a Obra ainda não tem título em português (`titulo_exibicao = titulo`), o título da Edição vira o `titulo_exibicao` (decisão do Leitor, 18/11/2026).
+- No banco real, *Dune* (goodbooks) ficou ligada a uma work duplicada da Open Library (`/works/OL2918756W`); a canônica é `/works/OL893414W`. Por isso a *Duna* da Aleph chega a *Dune* pela regra 3, não pela 1 nem pela 2.
 - Se a Obra já estiver na Estante, a UI avisa ("Você já tem *Duna* na Estante, com nota 5") e não cria nada (R1).
 - **Cadastro manual** (R1, história 11): título + autor criam uma Obra `origem='leitor'` sem Edição, e passam pelos passos 3 e 4 com o texto digitado.
 
@@ -283,14 +289,16 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 `estante.adicionar(leitor_id, obra_id, nota, edicao_id=None, origem) -> Leitura`:
 
 - Respeita `UNIQUE (leitor_id, obra_id)` e devolve um erro de domínio `JaNaEstante` se a Obra já estiver lá.
-- Se a Obra é `origem='leitor'` e ainda não tem `embedding`, calcula na hora: gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, na execução ativa. Se falhar (GPU ocupada, modelo ausente), a Leitura é salva assim mesmo e a Obra fica pendente para o `atualizar` (§10).
+- (Fase 2.) Se a Obra é `origem='leitor'` e ainda não tem `embedding`, calcula na hora: gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, na execução ativa. Se falhar (GPU ocupada, modelo ausente), a Leitura é salva assim mesmo e a Obra fica pendente para o `atualizar` (§10).
 - A Nota pode ficar vazia (R2): a Leitura vai para a Estante, mas fica fora da pontuação.
 
 `estante.mudar_nota(...)` e `estante.remover(...)` (R2) agem direto na tabela. Como as Sugestões são calculadas na leitura (§8.5), a mudança aparece na próxima abertura de "Para você", sem nenhum recálculo.
 
 ### 7.4 Montagem da Estante
 
-Abre automaticamente enquanto o Leitor tem **menos de 5 Leituras com Nota** e ainda não clicou em "Pular". Também fica acessível pelo menu.
+Abre automaticamente enquanto o Leitor tem **menos de 5 Leituras com Nota** e ainda não clicou em "Pular" (gravado como o evento `montagem_pulada`). Também fica acessível pelo menu.
+
+Obras sem `capa_url` (3.332 da base) recebem uma capa de reserva gerada localmente (SVG com título e autor), sem chamar a Covers API, que limita a busca por ISBN a 100 requisições a cada 5 min.
 
 1. **Gêneros:** chips de seleção múltipla (`st.pills`) com a lista do §6.3. É preciso escolher pelo menos 1.
 2. **Grade:** 24 Obras do Catálogo por página, fora da Estante, intercaladas por Gênero escolhido (round-robin) e, dentro de cada Gênero, ordenadas por `popularidade × forca`. Cada card tem capa, `titulo_exibicao`, autor, um seletor de Nota (`st.feedback("stars")`) e o botão **"Não li"**, que tira o card desta sessão. Há o botão "Mostrar mais".
@@ -319,6 +327,7 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `sugestao_exibida` | `{posicao, pontuacao, motivo_obra_id, execucoes}`, uma vez por item por abertura da lista | O2 |
 | `sugestao_aberta` | `{posicao}` | O2 |
 | `ja_li_de_sugestao` | `{posicao, nota}` | O5 |
+| `montagem_pulada` | `{}` | — (fecha a abertura automática da Montagem) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
 
@@ -462,7 +471,7 @@ O app **não** sobe com o Windows: ele só roda quando o Leitor o abre, com `scr
 
 1. Aplica as migrações pendentes (`alembic upgrade head`).
 2. Gera os embeddings e os Vizinhos de conteúdo das Obras `origem='leitor'` que estão sem eles.
-3. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução.
+3. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução (`pipeline/enriquecimento_leitor.py`). Obra sem ISBN é marcada sem consulta; com a Open Library fora do ar, o resto fica para a próxima abertura.
 4. Grava `ultima_atualizacao` (tabela `config_app`, chave/valor).
 
 O recálculo completo (`recalcular`) **não** roda na abertura.
