@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Connection, Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from recomendador.config import config
@@ -27,3 +27,21 @@ def sessao() -> Iterator[Session]:
         except Exception:
             s.rollback()
             raise
+
+
+_engine: Engine | None = None
+
+
+def engine() -> Engine:
+    """O Engine do processo, criado na primeira chamada (o Streamlit reaproveita o pool)."""
+    global _engine
+    if _engine is None:
+        _engine = criar_engine()
+    return _engine
+
+
+@contextmanager
+def transacao() -> Iterator[Connection]:
+    """Uma transação Core: commit no fim, rollback em erro. É a porta do `app/` para o banco."""
+    with engine().begin() as conn:
+        yield conn

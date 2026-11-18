@@ -1,0 +1,103 @@
+"""Cliente da busca do Google Books (R1, SPEC §5 e §7.1).
+
+Os termos do Google não permitem cópia permanente: o que vem daqui serve à busca e, quando o
+Leitor escolhe uma Edição, só os dados dela (com a capa por URL) vão para `edicao`.
+"""
+
+import re
+
+import httpx
+
+from recomendador.catalogo.fontes import FonteIndisponivel
+from recomendador.catalogo.isbn import normalizar_isbn, parece_isbn
+from recomendador.catalogo.tipos import ResultadoBusca
+
+URL = "https://www.googleapis.com/books/v1/volumes"
+MAX_RESULTADOS = 20
+# Só os campos usados: a resposta fica bem menor.
+_CAMPOS = (
+    "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,"
+    "industryIdentifiers,imageLinks,language))"
+)
+_RE_ANO = re.compile(r"^(\d{4})")
+
+
+def montar_q(texto: str) -> str:
+    """ISBN de 10 ou 13 dígitos (com ou sem hífens) vira `isbn:…`; o resto vai como texto."""
+    texto = " ".join(texto.split())
+    if parece_isbn(texto):
+        return "isbn:" + re.sub(r"[\s\-]", "", texto).upper()
+    return texto
+
+
+def _capa(volume: dict) -> str | None:
+    links = volume.get("imageLinks") or {}
+    url = links.get("thumbnail") or links.get("smallThumbnail")
+    if not isinstance(url, str):
+        return None
+    return "https://" + url.removeprefix("http://").removeprefix("https://")
+
+
+def _resultado(item: dict) -> ResultadoBusca | None:
+    v = item.get("volumeInfo") or {}
+    titulo = (v.get("title") or "").strip()
+    if not titulo or not item.get("id"):
+        return None
+    isbns = dict.fromkeys(
+        n
+        for i in v.get("industryIdentifiers") or []
+        if isinstance(i, dict)
+        and i.get("type") in ("ISBN_13", "ISBN_10")
+        and (n := normalizar_isbn(i.get("identifier")))
+    )
+    ano = _RE_ANO.match(v.get("publishedDate") or "")
+    idioma = (v.get("language") or "").split("-")[0].lower() or None
+    return ResultadoBusca(
+        titulo=titulo,
+        autores=tuple(a.strip() for a in v.get("authors") or [] if a.strip()),
+        ano=int(ano.group(1)) if ano else None,
+        capa_url=_capa(v),
+        google_volume_id=item["id"],
+        isbns=tuple(isbns),
+        editora=(v.get("publisher") or "").strip() or None,
+        idioma=idioma,
+        descricao=(v.get("description") or "").strip() or None,
+    )
+
+
+class GoogleBooks:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        transporte: httpx.BaseTransport | None = None,
+        timeout: float = 1.8,
+    ) -> None:
+        # O timeout fica abaixo de 2 s para a busca inteira caber na meta de p95 (SPEC §7.1).
+        self._chave = api_key
+        self._http = httpx.Client(timeout=timeout, transport=transporte)
+
+    def fechar(self) -> None:
+        self._http.close()
+
+    def buscar(self, texto: str) -> list[ResultadoBusca]:
+        params = {
+            "q": montar_q(texto),
+            "maxResults": MAX_RESULTADOS,
+            "printType": "books",
+            "fields": _CAMPOS,
+        }
+        if self._chave:
+            params["key"] = self._chave
+        try:
+            resposta = self._http.get(URL, params=params)
+        except httpx.HTTPError as e:
+            # Sem a URL na mensagem: ela leva a chave da API.
+            raise FonteIndisponivel(f"Google Books: {e.__class__.__name__}") from None
+        if resposta.status_code != 200:
+            raise FonteIndisponivel(f"Google Books: HTTP {resposta.status_code}")
+        try:
+            itens = resposta.json().get("items") or []
+        except ValueError as e:
+            raise FonteIndisponivel("Google Books: resposta inválida") from e
+        return [r for i in itens if isinstance(i, dict) and (r := _resultado(i))]

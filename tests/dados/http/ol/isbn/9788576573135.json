@@ -1,0 +1,82 @@
+{
+ "publishers": [
+  "Aleph"
+ ],
+ "source_records": [
+  "amazon:857657313X"
+ ],
+ "title": "Duna",
+ "covers": [
+  10368109
+ ],
+ "physical_format": "Hardcover",
+ "full_title": "Duna",
+ "publish_date": "28/04/2017",
+ "key": "/books/OL28969075M",
+ "authors": [
+  {
+   "key": "/authors/OL2965820A"
+  }
+ ],
+ "works": [
+  {
+   "key": "/works/OL893414W"
+  }
+ ],
+ "type": {
+  "key": "/type/edition"
+ },
+ "identifiers": {},
+ "languages": [
+  {
+   "key": "/languages/por"
+  }
+ ],
+ "number_of_pages": 680,
+ "description": {
+  "type": "/type/text",
+  "value": "“Duna é o melhor dos grandes romances de ficção científica, e o que mais se manteve relevante.\" - **Neil Gaiman**\r\n\r\n“Não conheço nada que se compare a este livro, a não ser O Senhor dos Anéis.”- **Arthur C. Clarke**\r\n\r\nUma estonteante mistura de aventura e misticismo, ecologia e política, este romance ganhador dos prêmios Hugo e Nebula deu início a uma das mais épicas histórias de toda a ficção científica. Duna é um triunfo da imaginação, que influenciará a literatura para sempre. Esta edição inédita, com introdução de Neil Gaiman, apresenta ao leitor o universo fantástico criado por Herbert."
+ },
+ "isbn_10": [
+  "857657313X"
+ ],
+ "isbn_13": [
+  "9788576573135"
+ ],
+ "publish_places": [
+  "São Paulo, Brasil"
+ ],
+ "series": [
+  "Duna #1"
+ ],
+ "contributors": [
+  {
+   "role": "Translator",
+   "name": "Maria do Carmo Zanini"
+  },
+  {
+   "role": "Cover Design",
+   "name": "Pedro Inoue"
+  },
+  {
+   "role": "Illustrator",
+   "name": "Marc Simonetti"
+  }
+ ],
+ "translation_of": "Dune",
+ "translated_from": [
+  {
+   "key": "/languages/eng"
+  }
+ ],
+ "latest_revision": 8,
+ "revision": 8,
+ "created": {
+  "type": "/type/datetime",
+  "value": "2020-08-19T18:36:31.352291"
+ },
+ "last_modified": {
+  "type": "/type/datetime",
+  "value": "2026-07-25T12:46:42.414666"
+ }
+}

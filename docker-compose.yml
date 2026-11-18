@@ -17,7 +17,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    restart: unless-stopped
+    # Só sobe pelo scripts/abrir.cmd, não junto com o Docker Desktop (SPEC §10).
+    restart: "no"
 
 volumes:
   pgdata:

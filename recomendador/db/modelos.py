@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    literal_column,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
@@ -110,6 +111,16 @@ class Obra(Base):
             "titulo_exibicao",
             postgresql_using="gin",
             postgresql_ops={"titulo_exibicao": "gin_trgm_ops"},
+        ),
+        # Busca do R1 por títulos e autores, sem acento (migração 0003, SPEC §7.1).
+        Index(
+            "obra_texto_busca_trgm",
+            # Expressão com rótulo, para a classe de operador ir em `postgresql_ops`.
+            literal_column(
+                "obra_texto_busca(titulo, titulo_original, titulo_exibicao, autores)"
+            ).label("texto_busca"),
+            postgresql_using="gin",
+            postgresql_ops={"texto_busca": "gin_trgm_ops"},
         ),
         Index(
             "obra_embedding_hnsw",

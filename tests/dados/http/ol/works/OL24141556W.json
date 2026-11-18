@@ -1,0 +1,58 @@
+{
+ "title": "Torto Arado",
+ "authors": [
+  {
+   "author": {
+    "key": "/authors/OL9081057A"
+   },
+   "type": {
+    "key": "/type/author_role"
+   }
+  },
+  {
+   "type": {
+    "key": "/type/author_role"
+   },
+   "author": {
+    "key": "/authors/OL10795389A"
+   }
+  }
+ ],
+ "key": "/works/OL24141556W",
+ "type": {
+  "key": "/type/work"
+ },
+ "covers": [
+  12369648
+ ],
+ "subjects": [
+  "Magic realism (Literature)",
+  "Accidents",
+  "Domestic fiction",
+  "Families",
+  "farmers",
+  "fiction",
+  "novels",
+  "sisters",
+  "Romance fiction",
+  "Portuguese fiction"
+ ],
+ "subject_places": [
+  "Brazil",
+  "Bahia"
+ ],
+ "description": {
+  "type": "/type/text",
+  "value": "Bibiana e Belonísia são filhas de trabalhadores de uma fazenda no Sertão da Bahia, descendentes de escravos para quem a abolição nunca passou de uma data marcada no calendário. Intrigadas com uma mala misteriosa sob a cama da avó, pagam o atrevimento de lhe pôr a mão com um acidente que mudará para sempre as suas vidas, tornando-as tão dependentes que uma será até a voz da outra.  Porém, com o avançar dos anos, a proximidade vai desfazer-se com a perspectiva que cada uma tem sobre o que as rodeia: enquanto Belonísia parece satisfeita com o trabalho na fazenda e os encantos do pai, Zeca Chapéu Grande, entre velas, incensos e ladainhas, Bibiana percebe desde cedo a injustiça da servidão que há três décadas é imposta à família e decide lutar pelo direito à terra e a emancipação dos trabalhadores. Para isso, porém, é obrigada a partir, separando-se da irmã.  Numa trama tecida de segredos antigos que têm quase sempre mulheres por protagonistas, e à sombra de desigualdades que se estendem até hoje no Brasil, Torto Arado é um romance polifónico belo e comovente que conta uma história de vida e morte, combate e redenção, de personagens que atravessaram o tempo sem nunca conseguirem sair do anonimato."
+ },
+ "latest_revision": 5,
+ "revision": 5,
+ "created": {
+  "type": "/type/datetime",
+  "value": "2021-01-06T14:57:12.289916"
+ },
+ "last_modified": {
+  "type": "/type/datetime",
+  "value": "2026-06-15T19:11:36.407462"
+ }
+}

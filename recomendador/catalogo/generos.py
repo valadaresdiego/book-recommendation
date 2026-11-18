@@ -48,3 +48,17 @@ def sincronizar_generos(conn: Connection, caminho: Path = ARQUIVO_GENEROS) -> in
     if linhas:
         conn.execute(insert(GeneroTag), linhas)
     return len(generos)
+
+
+@dataclass(frozen=True)
+class GeneroDoCatalogo:
+    slug: str
+    nome: str
+
+
+def listar_generos(conn: Connection) -> list[GeneroDoCatalogo]:
+    """Os Gêneros na ordem do `generos.yaml` (a ordem dos ids), para os chips da Montagem."""
+    return [
+        GeneroDoCatalogo(slug, nome)
+        for slug, nome in conn.execute(select(Genero.slug, Genero.nome).order_by(Genero.id))
+    ]
