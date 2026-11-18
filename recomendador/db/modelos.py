@@ -1,4 +1,4 @@
-"""Tabelas do domínio (SPEC §4). A migração `0002_esquema` cria exatamente isto.
+"""Tabelas do domínio (SPEC §4). As migrações em `migrations/versions/` criam exatamente isto.
 
 `tests/test_esquema.py` compara estes modelos com o banco migrado: se mudar um, mude o outro.
 """
@@ -39,6 +39,12 @@ class Base(DeclarativeBase):
 class OrigemObra(enum.StrEnum):
     BASE = "base"  # veio da Base de coleitura
     LEITOR = "leitor"  # adicionada pelo Leitor
+
+
+class OrigemIsbn(enum.StrEnum):
+    BASE = "base"  # do goodbooks-10k (`carregar-base`)
+    OPEN_LIBRARY = "open_library"  # de uma work do dump; o `enriquecer-ol` refaz a cada execução
+    LEITOR = "leitor"  # de uma Edição gravada pela Resolução; nunca é apagado
 
 
 class OrigemLeitura(enum.StrEnum):
@@ -158,6 +164,7 @@ class ObraIsbn(Base):
 
     isbn13: Mapped[str] = mapped_column(String(13), primary_key=True)
     obra_id: Mapped[int] = mapped_column(ForeignKey("obra.id", ondelete="CASCADE"), index=True)
+    origem: Mapped[OrigemIsbn] = mapped_column(_enum(OrigemIsbn, "origem_isbn"))
 
 
 class Edicao(Base):

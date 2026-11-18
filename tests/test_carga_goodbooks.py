@@ -79,11 +79,60 @@ def test_isbns_normalizados_para_13(conexao: Connection, pasta: Path) -> None:
     assert _isbns(conexao, _obra(conexao, 106)["id"]) == set()  # sem ISBN no CSV
 
 
+def test_isbn_da_base_toma_o_lugar_de_um_da_open_library(conexao: Connection, pasta: Path) -> None:
+    """Um ISBN da Base que uma execução do `enriquecer-ol` pôs em outra Obra volta para a
+    Obra da Base, com origem `base` (o `enriquecer-ol` apaga os de origem `open_library`)."""
+    carregar_base(conexao, pasta)
+    jogos, outra = _obra(conexao, 1)["id"], _obra(conexao, 4)["id"]
+    conexao.execute(
+        text("UPDATE obra_isbn SET obra_id = :o, origem = 'open_library' WHERE isbn13 = :i"),
+        {"o": outra, "i": "9780439023481"},
+    )
+
+    carregar_base(conexao, pasta)
+
+    obra_id, origem = conexao.execute(
+        text("SELECT obra_id, origem FROM obra_isbn WHERE isbn13 = '9780439023481'")
+    ).one()
+    assert (obra_id, str(origem)) == (jogos, "base")
+
+
 def test_isbn13_em_notacao_cientifica_recupera_o_digito_verificador() -> None:
+    # 978043902347|4 não arredondaria para ...348: só sobra 9780439023481.
     assert isbn13_do_goodbooks(None, "9.78043902348e+12") == {"9780439023481"}
-    assert isbn13_do_goodbooks(None, "9.7804465798e+12") == {"9780446579803"}
+    # 978044657980|3 e 978044657979|7 dão os dois "9.7804465798e+12": sem ISBN-10, nenhum.
+    assert isbn13_do_goodbooks(None, "9.7804465798e+12") == set()
+    assert isbn13_do_goodbooks("446579807", "9.7804465798e+12") == {"9780446579803"}
+    assert isbn13_do_goodbooks(None, "9780439023481") == {"9780439023481"}  # inteiro
     assert isbn13_do_goodbooks(None, "76783609419.0") == set()  # não é ISBN
     assert isbn13_do_goodbooks("61120081", None) == {"9780061120084"}
+
+
+def test_isbn13_arredondado_nao_vira_o_isbn_de_outro_livro() -> None:
+    """*A Tree Grows in Brooklyn* (9780061120077) foi gravado como "9.78006112008e+12", e
+    recalcular o dígito verificador dava 9780061120084, de *To Kill a Mockingbird*."""
+    assert isbn13_do_goodbooks("61120073", "9.78006112008e+12") == {"9780061120077"}
+    assert isbn13_do_goodbooks("61120081", "9.78006112008e+12") == {"9780061120084"}
+    # Um ISBN-13 que não é o ISBN-10 arredondado é de outra Edição e entra também.
+    assert isbn13_do_goodbooks("446612707", "9.78055381395e+12") == {
+        "9780446612708",
+        "9780553813951",
+    }
+
+
+def test_carga_apaga_os_isbns_da_base_que_o_csv_nao_da_mais(
+    conexao: Connection, pasta: Path
+) -> None:
+    carregar_base(conexao, pasta)
+    jogos = _obra(conexao, 1)["id"]
+    for isbn, origem in (("9780061120077", "base"), ("9780000000001", "leitor")):
+        conexao.execute(
+            text("INSERT INTO obra_isbn VALUES (:i, :o, :g)"), {"i": isbn, "o": jogos, "g": origem}
+        )
+
+    carregar_base(conexao, pasta)
+
+    assert _isbns(conexao, jogos) == {"9780439023481", "9780000000001"}
 
 
 def test_limpar_titulo() -> None:

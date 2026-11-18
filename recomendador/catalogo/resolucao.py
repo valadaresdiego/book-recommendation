@@ -293,8 +293,10 @@ def registrar_resolucao(
 
     `escolha` é a candidata que o Leitor apontou em "É uma destas?" (só na regra 4);
     sem ela, a regra 4 cria a Obra `origem='leitor'`. A Edição escolhida é gravada em
-    `edicao`, os ISBNs dela passam a apontar para a Obra (a próxima busca resolve pela
-    regra 1) e, se a Edição é em português e a Obra ainda não tem título em português,
+    `edicao`, os ISBNs dela passam a apontar para a Obra com origem `leitor` (a próxima
+    busca resolve pela regra 1, e o `enriquecer-ol` não os apaga; um ISBN que já estava
+    lá com origem `open_library` também passa a ser do Leitor) e, se a Edição é em
+    português e a Obra ainda não tem título em português,
     o título dela vira o `titulo_exibicao`.
     """
     if escolha is not None:
@@ -315,7 +317,11 @@ def registrar_resolucao(
     edicao_id = _gravar_edicao(conn, obra_id, edicao, resolucao.edicao_ol)
     if edicao.isbns:
         conn.execute(
-            text("INSERT INTO obra_isbn (isbn13, obra_id) VALUES (:i, :o) ON CONFLICT DO NOTHING"),
+            text(
+                "INSERT INTO obra_isbn (isbn13, obra_id, origem) VALUES (:i, :o, 'leitor') "
+                "ON CONFLICT (isbn13) DO UPDATE SET obra_id = :o, origem = 'leitor' "
+                "WHERE obra_isbn.origem = 'open_library'"
+            ),
             [{"i": i, "o": obra_id} for i in edicao.isbns],
         )
     if edicao.idioma == "pt":

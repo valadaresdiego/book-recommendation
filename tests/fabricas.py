@@ -40,8 +40,8 @@ def criar_obra(
     ).scalar_one()
     for isbn in isbns:
         conexao.execute(
-            text("INSERT INTO obra_isbn (isbn13, obra_id) VALUES (:i, :o)"),
-            {"i": isbn, "o": obra_id},
+            text("INSERT INTO obra_isbn (isbn13, obra_id, origem) VALUES (:i, :o, :g)"),
+            {"i": isbn, "o": obra_id, "g": "base" if origem == "base" else "leitor"},
         )
     return obra_id
 
