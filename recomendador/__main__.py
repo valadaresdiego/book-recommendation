@@ -140,7 +140,7 @@ def recalcular() -> None:
 
 @app.command("atualizar")
 def atualizar() -> None:
-    """Rotina do logon (SPEC §10): migrações e `ultima_atualizacao`.
+    """Rotina de abertura do app (SPEC §10): migrações e `ultima_atualizacao`.
 
     Os passos 2 (embeddings das Obras do Leitor) e 3 (enriquecimento pela API da Open
     Library) entram nas fases 2 e 1, junto com o que eles atualizam.

@@ -1,6 +1,6 @@
 # A v1 roda local, em Streamlit, sem login
 
-O PRD previa um web app hospedado com login (R6). A v1 roda **só no computador do Leitor**: interface em Streamlit, PostgreSQL local (Docker, com pgvector), cálculos na GPU local (RTX 3060) e atualização a cada vez que o PC liga. Sem login. Python foi escolhido de ponta a ponta porque o núcleo do produto são os modelos de recomendação, e manter um segundo runtime (TypeScript) não se paga para um usuário só. A hospedagem fica para uma segunda onda.
+O PRD previa um web app hospedado com login (R6). A v1 roda **só no computador do Leitor**: interface em Streamlit, PostgreSQL local (Docker, com pgvector), cálculos na GPU local (RTX 3060) e atualização a cada vez que o Leitor abre o app (nada roda com o Windows). Sem login. Python foi escolhido de ponta a ponta porque o núcleo do produto são os modelos de recomendação, e manter um segundo runtime (TypeScript) não se paga para um usuário só. A hospedagem fica para uma segunda onda.
 
 ## Opções consideradas
 

@@ -10,7 +10,7 @@ Registro pessoal das minhas Leituras, com Nota, e Sugestões do que ler a seguir
 
 ## Pré-requisitos
 
-- Windows com Docker Desktop configurado para **iniciar com o Windows**
+- Windows com Docker Desktop (não precisa iniciar com o Windows: o app o abre se precisar)
 - [uv](https://docs.astral.sh/uv/) (instala o Python 3.13 sozinho)
 - GPU NVIDIA com driver recente (só a partir da fase 2)
 
@@ -30,7 +30,7 @@ uv run streamlit run app/main.py --server.address 127.0.0.1
 
 Para a fase 2 em diante (embeddings na GPU): `uv sync --extra ml`.
 
-Para subir tudo no logon do Windows: `powershell -ExecutionPolicy Bypass -File scripts/registrar-tarefa.ps1`.
+No dia a dia, abra o app com **`scripts/abrir.cmd`** (ou um atalho dele na Área de Trabalho). Ele abre o Docker Desktop se precisar, sobe o banco, roda o `atualizar` e abre o app no navegador. Nada roda com o Windows; fechar a janela encerra o app.
 
 ## Estrutura
 
@@ -38,7 +38,7 @@ Para subir tudo no logon do Windows: `powershell -ExecutionPolicy Bypass -File s
 recomendador/   catalogo/ · estante/ · recomendacao/ · pipeline/ · db/ · config.py
 app/            páginas Streamlit (só chamam o pacote)
 migrations/     Alembic
-scripts/        iniciar.ps1, registrar-tarefa.ps1
+scripts/        abrir.cmd, iniciar.ps1
 docker/         scripts de criação do banco
 data/           goodbooks-10k, dumps da Open Library, modelos (fora do git)
 reports/        relatórios de avaliação offline

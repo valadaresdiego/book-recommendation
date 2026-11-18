@@ -26,7 +26,7 @@ Mudanças em relação ao PRD original, registradas nos ADRs e já incorporadas 
 ```
 ┌──────────────────────────── PC do Leitor ─────────────────────────────┐
 │                                                                        │
-│  Agendador do Windows (logon) ──► scripts/iniciar.ps1                  │
+│  Leitor abre scripts/abrir.cmd ──► scripts/iniciar.ps1                 │
 │        │ 1. docker compose up -d db                                    │
 │        │ 2. python -m recomendador atualizar                           │
 │        │ 3. streamlit run app.py  (127.0.0.1:8501)                     │
@@ -91,7 +91,7 @@ recomendador/
   catalogo/  estante/  recomendacao/  pipeline/  db/ (modelos SQLAlchemy, sessão)  config.py
 app/            # páginas Streamlit
 migrations/     # Alembic
-scripts/        # iniciar.ps1, registrar-tarefa.ps1
+scripts/        # abrir.cmd, iniciar.ps1
 data/           # raw/ (goodbooks-10k), ol/ (dumps), cache/; fora do git
 reports/        # relatórios de avaliação, versionados
 tests/
@@ -196,7 +196,7 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 | `avaliar --execucoes …` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. | Sim |
 | `ativar <execucao_id>` | Torna a execução ativa e desativa a anterior do mesmo tipo | Sim |
 | `recalcular` | `calcular-conteudo` + `calcular-coleitura` + `avaliar` + `ativar` (só se passar no critério do §9.4) | n/a |
-| `atualizar` | Rotina do logon (§10) | Sim |
+| `atualizar` | Rotina de abertura do app (§10) | Sim |
 
 ### 6.1 Carga do goodbooks-10k
 
@@ -449,13 +449,14 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 
 ---
 
-## 10. Inicialização no logon
+## 10. Inicialização ao abrir o app
 
-`scripts/registrar-tarefa.ps1` cria a tarefa "Recomendador de Livros" no Agendador do Windows (disparo: logon do usuário; ação: `iniciar.ps1`). `iniciar.ps1`:
+O app **não** sobe com o Windows: ele só roda quando o Leitor o abre, com `scripts/abrir.cmd` (dá para criar um atalho dele na Área de Trabalho). O `abrir.cmd` chama `iniciar.ps1`, que:
 
-1. Espera o Docker Desktop responder (`docker info`, até 120 s) e roda `docker compose up -d db`. Espera o `healthcheck` do Postgres (`pg_isready`).
-2. `uv run python -m recomendador atualizar`, com log em `logs/atualizar-AAAA-MM-DD.log`. O app sobe mesmo que esse passo falhe.
-3. `uv run streamlit run app/main.py --server.address 127.0.0.1 --server.headless true`, em segundo plano.
+0. Se o app já estiver no ar (outra janela), só abre `127.0.0.1:8501` no navegador.
+1. Abre o Docker Desktop, se estiver fechado, e espera ele responder (`docker info`, até 120 s). Roda `docker compose up -d --wait db`, que espera o `healthcheck` do Postgres (`pg_isready`).
+2. `uv run python -m recomendador atualizar`, com log em `logs/atualizar-AAAA-MM-DD.log`. O app abre mesmo que esse passo falhe.
+3. `uv run streamlit run app/main.py --server.address 127.0.0.1 --server.headless true` na própria janela, e abre o navegador quando o app responder. Fechar a janela encerra o app.
 
 `atualizar` faz, em ordem e com tempo máximo total de 10 min:
 
@@ -464,9 +465,9 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 3. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução.
 4. Grava `ultima_atualizacao` (tabela `config_app`, chave/valor).
 
-O recálculo completo (`recalcular`) **não** roda no logon.
+O recálculo completo (`recalcular`) **não** roda na abertura.
 
-Pré-requisito documentado no README: o Docker Desktop configurado para iniciar com o Windows.
+Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso máximo para o app abrir. Os passos 2 e 3 já são limitados (só Obras pendentes, no máximo 100 por vez) para que, no dia a dia, a abertura leve segundos.
 
 ---
 
@@ -530,7 +531,7 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 
 | Fase | Entrega | Pronto quando |
 |---|---|---|
-| **0. Fundação** | docker compose, esquema, `carregar-base`, `enriquecer-ol`, `mapear-generos`, tarefa de logon | Catálogo com 10 mil Obras; % de `ol_work_key`, de descrição e de título em português registrados no log; ≥ 90 % das Obras com algum Gênero; reiniciar o PC sobe o app em `127.0.0.1:8501` |
+| **0. Fundação** | docker compose, esquema, `carregar-base`, `enriquecer-ol`, `mapear-generos`, `abrir.cmd` | Catálogo com 10 mil Obras; % de `ol_work_key`, de descrição e de título em português registrados no log; ≥ 90 % das Obras com algum Gênero; abrir `scripts/abrir.cmd` com o Docker Desktop fechado sobe o banco e o app e abre `127.0.0.1:8501` no navegador |
 | **1. Estante** | R1, R2, R3, Montagem da Estante, Eventos | Critérios de R1 a R3 do PRD; busca ≤ 2 s p95; os 4 caminhos do §7.2 cobertos por teste; adicionar + dar Nota < 30 s (medido pelo evento `leitura_salva`) |
 | **2. Parecidos** | Bake-off (ADR 0006), R5 + R5a, R4 com α = 1, avaliação offline | NDCG@20 só com conteúdo > baseline de popularidade; ≥ 80 % das Leituras com R5a preenchido (O4); com 5 Notas, ≥ 10 Sugestões (O1) |
 | **3. Coleitura** | R5b, R4 completo, calibração de α | NDCG@20 combinado ≥ o melhor dos dois isolados; **taxa de correspondência das Leituras com Obras `origem='base'` ≥ 40 %**, senão reabrir a escolha da Base de coleitura (PRD §9); ≥ 40 % das Leituras com R5b preenchido (O4) |
@@ -544,6 +545,6 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | Edições brasileiras não casam com o Catálogo | R5b vazio, Coleitura fraca | Coletar todos os ISBNs das works nos dumps da OL (§6.2); regra 3 do §7.2; "É uma destas?"; medir na fase 3 |
 | Termos do Google Books sobre cache | Uso fora dos termos | Persistir dados da OL de preferência; capa por URL; cache só na sessão |
 | Viés de popularidade do goodbooks-10k (só livros populares) | Sugestões óbvias | Cobertura medida no §9.3; limite por autor; Base maior no P2 |
-| Docker Desktop não sobe no logon | App fora do ar | `iniciar.ps1` espera e registra; README com a configuração |
+| Docker Desktop não abre ou demora | App não abre | `iniciar.ps1` abre o Docker Desktop, espera até 120 s e mostra o erro com o caminho do log |
 | Dumps da OL grandes (~12 GB) | Primeira carga lenta | Streaming; processamento único; a carga roda bem uma vez e não precisa ser rápida |
 | VRAM de 12 GB | Modelo de embedding grande não cabe | Os finalistas já são filtrados por VRAM (§8.4.1); fp16; batches pequenos |
