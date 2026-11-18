@@ -105,8 +105,9 @@ def adicionar(
     `duracao_s` é o tempo desde a última busca da sessão, para o O3 (evento `leitura_salva`).
     Levanta `JaNaEstante` se a Obra já estiver lá, mesmo por outra Edição.
 
-    O embedding das Obras `origem='leitor'` (SPEC §7.3) entra na fase 2, com o modelo do
-    bake-off; até lá, elas ficam pendentes para o `atualizar`.
+    O embedding de uma Obra `origem='leitor'` (SPEC §7.3) é calculado depois, numa
+    transação à parte (`recomendacao.calcular_vizinhos_da_obra`), para uma falha nele não
+    desfazer a Leitura.
     """
     _validar_nota(nota)
     if existente := leitura_da_obra(conn, leitor_id, obra_id):

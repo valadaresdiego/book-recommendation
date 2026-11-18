@@ -25,6 +25,8 @@ class Config(BaseSettings):
 
     # SPEC §8.5: fase 2 usa só conteúdo (α = 1); a fase 3 calibra.
     alfa: float = 1.0
+    # ADR 0006: a soma do §8.5 é multiplicada por (1 + popularidade)^β.
+    beta_popularidade: float = 0.25
     max_sugestoes: int = 20
     min_notas_para_sugerir: int = 3
 

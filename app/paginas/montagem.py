@@ -71,8 +71,7 @@ contador.progress(min(notas, META) / META, text=f"**{min(notas, META)} de {META}
 with acoes:
     if notas >= META:
         if st.button("Ver minhas sugestões", type="primary", use_container_width=True):
-            # Na fase 1, "Para você" ainda não existe: o botão leva à Estante (SPEC §7.4).
-            st.switch_page("paginas/estante.py")
+            st.switch_page("paginas/para_voce.py")
     elif st.button("Pular por enquanto", on_click=_pular, use_container_width=True):
         st.switch_page("paginas/estante.py")
 

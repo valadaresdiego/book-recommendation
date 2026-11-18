@@ -26,6 +26,7 @@ dependencies = [
 ml = [
     "torch>=2.7",
     "sentence-transformers>=3.3",
+    "peft>=0.17",  # adaptadores do jina-embeddings-v5
 ]
 
 [project.scripts]

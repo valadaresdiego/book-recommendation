@@ -193,10 +193,11 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 | `carregar-base` | Baixa (se faltar) e carrega o goodbooks-10k: 10 mil Obras (`origem='base'`), `obra_isbn`, `obra_tag` e Parquet das Notas | Sim (upsert por `goodbooks_book_id`) |
 | `enriquecer-ol --dumps data/ol` | §6.2 | Sim |
 | `mapear-generos` | §6.3 | Sim |
-| `calcular-conteudo --modelo X` | §8.2. Cria uma execução de conteúdo **inativa**. | Cria uma execução nova |
+| `calcular-conteudo --modelo X` | §8.2. Cria uma execução de conteúdo **inativa**: Vizinhos em `vizinho`, embeddings em `data/embeddings/conteudo-<id>.npz`. | Cria uma execução nova |
+| `bakeoff` | §8.4. `calcular-conteudo` de cada finalista, teste entre idiomas, tempo de uma Obra e `avaliar` de todos. Não ativa nada. | Cria execuções novas |
 | `calcular-coleitura` | §8.1. Cria uma execução de coleitura **inativa**. | Cria uma execução nova |
-| `avaliar --execucoes …` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. | Sim |
-| `ativar <execucao_id>` | Torna a execução ativa e desativa a anterior do mesmo tipo | Sim |
+| `avaliar <execucao_id>…` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. | Sim |
+| `ativar <execucao_id> [--forcar]` | Torna a execução ativa e desativa a anterior do mesmo tipo, se passar no critério do §9.4. Numa de conteúdo, copia os embeddings dela para `obra.embedding`. | Sim |
 | `recalcular` | `calcular-conteudo` + `calcular-coleitura` + `avaliar` + `ativar` (só se passar no critério do §9.4) | n/a |
 | `atualizar` | Rotina de abertura do app (§10) | Sim |
 
@@ -227,7 +228,7 @@ Saída esperada (registrada em log): % de Obras com `ol_work_key`, % com descri�
 
 ### 6.3 Gêneros
 
-Lista inicial, a revisar pelo Leitor antes da fase 1. Fica em `catalogo/generos.yaml` com as tags que mapeiam cada Gênero:
+Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catalogo/generos.yaml` com as tags que mapeiam cada Gênero:
 
 | Gênero | Tags de exemplo |
 |---|---|
@@ -291,7 +292,7 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 `estante.adicionar(leitor_id, obra_id, nota, edicao_id=None, origem) -> Leitura`:
 
 - Respeita `UNIQUE (leitor_id, obra_id)` e devolve um erro de domínio `JaNaEstante` se a Obra já estiver lá.
-- (Fase 2.) Se a Obra é `origem='leitor'` e ainda não tem `embedding`, calcula na hora: gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, na execução ativa. Se falhar (GPU ocupada, modelo ausente), a Leitura é salva assim mesmo e a Obra fica pendente para o `atualizar` (§10).
+- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
 - A Nota pode ficar vazia (R2): a Leitura vai para a Estante, mas fica fora da pontuação.
 
 `estante.mudar_nota(...)` e `estante.remover(...)` (R2) agem direto na tabela. Como as Sugestões são calculadas na leitura (§8.5), a mudança aparece na próxima abertura de "Para você", sem nenhum recálculo.
@@ -359,11 +360,13 @@ sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
   ```
   {titulo} ({titulo_original}). Autor: {autores}. Gêneros: {gêneros}. Temas: {top 15 tags + assuntos}. {descrição, até 1.500 caracteres}
   ```
+  O título original só entra se for diferente, e as partes vazias saem. Os temas são até 15 tags de leitores (as de maior contagem) e até 10 assuntos da Open Library, em minúsculas e sem repetir. A descrição é cortada na última palavra inteira, com "…".
   O prefixo ou instrução exigido pelo modelo vencedor é aplicado por `recomendacao.embeddings`, num único lugar.
 - O embedding é normalizado (norma 1). A similaridade é o cosseno.
 - **Em lote:** todas as Obras do Catálogo na GPU, em batches de 64, fp16. Os Vizinhos saem de `E Eᵀ` por blocos, guardando os top K = 50, sem a própria Obra e com **as Obras do mesmo autor limitadas a 5** (senão uma série domina a lista).
 - **Interativo:** uma Obra por vez (§7.3), com KNN no pgvector (índice HNSW, `vector_cosine_ops`).
 - O modelo é carregado uma vez por processo e o nome dele fica em `execucao_modelo.modelo`.
+- **Embeddings por execução:** `calcular-conteudo` guarda os embeddings em `data/embeddings/conteudo-<execucao>.npz`, e só o `ativar` os copia para `obra.embedding` (com `embedding_execucao_id`). Assim o bake-off calcula vários modelos sem mexer no que o app usa. As Obras do Leitor que a execução ativada não cobre ficam pendentes para o `atualizar`.
 
 ### 8.3 Página da Obra (R5)
 
@@ -382,11 +385,18 @@ Finalistas: **ver §8.4.1** (preenchido a partir de `research/modelos-embedding.
 
 Para cada finalista:
 
+O comando `bakeoff` faz os três passos para cada finalista e avalia todos juntos.
+
 1. `calcular-conteudo --modelo X` gera uma execução inativa.
 2. `avaliar`, com α = 1 (só conteúdo), produz o NDCG@20 e o Recall@20 do §9.
 3. **Teste entre idiomas:** em `tests/dados/pares_pt_en.yaml`, 20 Obras do Catálogo com um texto em português, montado com a descrição de uma Edição brasileira (Google Books), e o texto em inglês do Catálogo. Critério: em ≥ 18 de 20, o embedding do texto em português tem a própria Obra entre os 3 vizinhos mais próximos do Catálogo.
+   - O texto em português imita uma Obra do Leitor vinda de uma Edição brasileira: título, autor e descrição, sem tags.
+   - Os pares são as Obras mais populares com uma Edição brasileira (ISBN 978-85 ou 978-65) cuja descrição o Google Books tem em português, uma por autor.
+   - Como o repositório é público e as descrições são textos das editoras, o YAML guarda só os identificadores (Obra, ISBN, volume do Google Books, título). As descrições ficam no cache local `data/bakeoff/pares_pt_en.json`, refeito pelo Google Books quando falta.
 
 **Vencedor:** o maior NDCG@20 entre os que passam no teste entre idiomas. Em empate (diferença < 0,005), vence o menor e mais rápido. O resultado vira o ADR 0006, com os números.
+
+**Resultado (18/11/2026, ADR 0006):** `Qwen/Qwen3-Embedding-4B`, com NDCG@20 de 0,1143 (β = 0,25), 19/20 no teste entre idiomas e 126 ms por Obra. O harrier reprovou no teste entre idiomas (16/20); o jina passou (20/20), com NDCG@20 menor (0,0919). Sem o peso da popularidade, nenhum dos três vencia o baseline de popularidade.
 
 #### 8.4.1 Finalistas
 
@@ -418,15 +428,17 @@ para cada Leitura r com Nota e peso ≠ 0:
     parcela(c, r) = peso(nota_r) × [ α·sim_conteudo(r→c) + (1−α)·sim_coleitura(r→c) ]
                     (similaridade ausente = 0)
 
-pontuacao(c) = Σ_r parcela(c, r)
+soma(c)      = Σ_r parcela(c, r)
+pontuacao(c) = soma(c) × (1 + popularidade(c))^β                     (ADR 0006)
 candidatos   = c ∉ Estante  (P1: ∉ dispensas)  e  pontuacao(c) > 0
 ordem        = pontuacao desc, depois popularidade desc
 Motivo(c)    = o r com maior parcela(c, r) > 0
 ```
 
 - **α** fica em config: fase 2 = 1,0; fase 3 = calibrado na avaliação, com 0,5 de ponto de partida.
+- **β** (peso da popularidade) fica em config: 0,25 desde o bake-off (ADR 0006). O fator é positivo, então não muda quem é candidata (soma > 0), a exclusão da Estante nem o Motivo: só a ordem.
 - Como a "Obra" é a unidade (ADR 0001), excluir a Estante já exclui todas as Edições e traduções (critério do R4).
-- O Motivo nunca é uma Leitura com Nota ≤ 3, porque o peso dessas é ≤ 0 e a parcela não pode ser positiva. O texto é "Porque você deu {nota} a *{titulo_exibicao}*".
+- O Motivo nunca é uma Leitura com Nota ≤ 3, porque o peso dessas é ≤ 0 e a parcela não pode ser positiva. A consulta também só aceita Motivo de peso > 0, para o caso raro de similaridade negativa. O texto é "Porque você deu {nota} a *{titulo_exibicao}*".
 - **Menos de 3 Leituras com Nota:** não calcula. Mostra "Avalie pelo menos 3 livros para receber sugestões" e um contador "{n} de 3", com um link para a Montagem da Estante.
 - Meta de desempenho: **≤ 500 ms** com 500 Leituras na Estante.
 
@@ -438,13 +450,13 @@ Módulo `pipeline/avaliacao.py`, com semente fixa (42) e resultado reprodutível
 
 ### 9.1 Divisão
 
-- Considera os leitores do goodbooks-10k com ≥ 20 Notas e amostra **5.000** deles.
+- Considera os leitores do goodbooks-10k com ≥ 20 Notas e ao menos uma Nota ≥ 4, e amostra **5.000** deles.
 - Para cada um, o **teste** são 20 % das Notas ≥ 4, sorteadas. O treino é todo o resto.
 - A coleitura usada na avaliação é calculada **só** com o treino de todos os leitores, com o teste removido. O conteúdo não usa Notas, então não há vazamento.
 
 ### 9.2 Protocolo
 
-Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a mesma pontuação do §8.5 (mesma função Python, sem SQL, sobre os Vizinhos da execução avaliada), pega as top 20 fora do treino e compara com o teste.
+Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a mesma pontuação do §8.5 (em Python, sem SQL, sobre os Vizinhos da execução avaliada), pega as top 20 fora do treino e compara com o teste. A pontuação é `W @ S` em matrizes esparsas (`recomendacao.pontuacao`: W são os pesos das Notas de cada Estante, S as similaridades misturadas por α), para os 5.000 leitores de uma vez; um teste confere que a consulta SQL do "Para você" dá o mesmo resultado.
 
 ### 9.3 Métricas
 
@@ -454,7 +466,7 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 
 ### 9.4 Calibração e critério de entrada
 
-- Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e uma mais simétrica). O resultado vai para `reports/avaliacao-*.md`.
+- Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, β ∈ {0; 0,25; 0,5; 1} (o `avaliar` já grava esta em `metricas.varredura_beta`), K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e uma mais simétrica). O resultado vai para `reports/avaliacao-*.md`.
 - **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual.
 - O UCSD Goodreads é validação extra opcional e manual, só local (licença: ADR 0003). Ele não entra no `recalcular`.
 

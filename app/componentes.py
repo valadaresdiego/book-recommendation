@@ -4,7 +4,7 @@ import time
 
 import streamlit as st
 
-from recomendador import catalogo, estante
+from recomendador import catalogo, estante, recomendacao
 
 LEITOR = estante.LEITOR_ID
 
@@ -248,8 +248,87 @@ def _salvar(estado: _Estado, r: catalogo.Resolucao, escolha: int | None, nota: i
         st.warning(str(e), icon="📚")
         return
     depois_de_gravar()
+    calcular_parecidos(registrada.obra_id)
     estado.recomecar()
     estado["inicio"] = None
     nota_txt = f" com nota {nota}" if nota else " sem nota"
     st.session_state[estado.chave("salvo")] = f"{item.titulo} entrou na Estante{nota_txt}."
     st.rerun()
+
+
+# --- Embedding de uma Obra do Leitor, na hora (SPEC §7.3) ---
+
+
+@st.cache_resource(show_spinner="Carregando o modelo de embedding…")
+def _codificador(nome: str) -> recomendacao.Codificador:
+    return recomendacao.carregar_codificador(nome)
+
+
+def calcular_parecidos(obra_id: int) -> None:
+    """Depois de salvar a Leitura, numa transação à parte: se falhar (GPU ocupada, modelo
+    ausente), a Leitura já está salva e a Obra fica para o `atualizar` (SPEC §10)."""
+    with recomendacao.transacao() as conn:
+        if not recomendacao.pendente(conn, obra_id):
+            return
+        nome = recomendacao.modelo_de_conteudo_ativo(conn)
+    try:
+        cod = _codificador(nome)
+        with st.spinner("Calculando os parecidos com este livro…"):
+            with recomendacao.transacao() as conn:
+                recomendacao.calcular_vizinhos_da_obra(conn, obra_id, cod)
+    except Exception as e:  # noqa: BLE001 — nada aqui pode desfazer a Leitura salva
+        st.caption(f"Os parecidos ficam para a próxima abertura do app ({e.__class__.__name__}).")
+        return
+    depois_de_gravar()
+
+
+# --- Sugestões e página da Obra (R4, R5) ---
+
+PAGINA_OBRA = "paginas/obra.py"
+
+
+def texto_do_motivo(nota: int, titulo: str) -> str:
+    """O Motivo em linguagem simples (SPEC §8.5); o domínio entrega só os dados."""
+    return f"Porque você deu {nota} a *{titulo}*"
+
+
+def abrir_obra(obra_id: int, posicao: int | None = None) -> None:
+    """Vai para a página da Obra. Vindo de "Para você", registra `sugestao_aberta` (O2)."""
+    if posicao is not None:
+        with estante.transacao() as conn:
+            estante.registrar_evento(conn, LEITOR, "sugestao_aberta", obra_id, posicao=posicao)
+        st.session_state.setdefault("posicao-da-sugestao", {})[obra_id] = posicao
+    st.switch_page(PAGINA_OBRA, query_params={"obra": str(obra_id)})
+
+
+def ja_li(obra_id: int, titulo: str, chave: str) -> None:
+    """O botão "Já li": abre a Nota e grava a Leitura (R1 + R2 num passo).
+
+    Uma Obra que veio de "Para você" entra com `origem='sugestao'` e registra
+    `ja_li_de_sugestao` (O5); as demais, com `origem='catalogo'`.
+    """
+    with st.popover("Já li", use_container_width=True, key=f"{chave}-pop"):
+        estrelas = st.feedback("stars", key=f"{chave}-nota")
+        if not st.button("Salvar na Estante", key=f"{chave}-salvar", type="primary"):
+            return
+        nota = None if estrelas is None else estrelas + 1
+        posicao = st.session_state.get("posicao-da-sugestao", {}).get(obra_id)
+        try:
+            with estante.transacao() as conn:
+                estante.adicionar(
+                    conn,
+                    LEITOR,
+                    obra_id,
+                    nota,
+                    origem="sugestao" if posicao is not None else "catalogo",
+                )
+                if posicao is not None:
+                    estante.registrar_evento(
+                        conn, LEITOR, "ja_li_de_sugestao", obra_id, posicao=posicao, nota=nota
+                    )
+        except estante.JaNaEstante as e:
+            st.warning(str(e), icon="📚")
+            return
+        depois_de_gravar()
+        st.toast(f"{titulo} entrou na Estante.")
+        st.rerun()

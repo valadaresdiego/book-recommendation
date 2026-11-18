@@ -1,0 +1,83 @@
+# Pares do teste entre idiomas do bake-off (SPEC §8.4), gerados por
+# `python -m recomendador bakeoff --refazer-pares`. Só identificadores: as descrições
+# (das editoras) ficam no cache local data/bakeoff/pares_pt_en.json.
+- goodbooks_book_id: 1
+  isbn: '9786555321449'
+  google_volume_id: jbf5zwEACAAJ
+  titulo: Jogos Vorazes
+- goodbooks_book_id: 2
+  isbn: '9788532511010'
+  google_volume_id: DqvrPgAACAAJ
+  titulo: Harry Potter e a Pedra Filosofal
+- goodbooks_book_id: 3
+  isbn: '9788598078304'
+  google_volume_id: DLxJPgAACAAJ
+  titulo: Crepúsculo
+- goodbooks_book_id: 5
+  isbn: '9788501063519'
+  google_volume_id: m1ONPgAACAAJ
+  titulo: O Grande gatsby
+- goodbooks_book_id: 6
+  isbn: '9788580572261'
+  google_volume_id: XLldvgAACAAJ
+  titulo: A culpa é das estrelas
+- goodbooks_book_id: 12
+  isbn: '9788579801310'
+  google_volume_id: 2pbONAEACAAJ
+  titulo: Divergente - Uma Escolha Pode Te Transformar
+- goodbooks_book_id: 7
+  isbn: '9788533608818'
+  google_volume_id: _2xmRAAACAAJ
+  titulo: O Hobbit
+- goodbooks_book_id: 8
+  isbn: '9788587575012'
+  google_volume_id: Aq0qQAAACAAJ
+  titulo: O apanhador no campo de centeio
+- goodbooks_book_id: 9
+  isbn: '9788575421468'
+  google_volume_id: 7d_KAAAACAAJ
+  titulo: Anjos e demônios
+- goodbooks_book_id: 13
+  isbn: '9786555522266'
+  google_volume_id: I7X8zwEACAAJ
+  titulo: '1984'
+- goodbooks_book_id: 15
+  isbn: '9788501068200'
+  google_volume_id: AeiHswEACAAJ
+  titulo: Diario De Anne Frank
+- goodbooks_book_id: 16
+  isbn: '9788535913248'
+  google_volume_id: 5ne_wAEACAAJ
+  titulo: Os homens que não amavam as mulheres
+- goodbooks_book_id: 11
+  isbn: '9788520917671'
+  google_volume_id: UTsBwQEACAAJ
+  titulo: O Caçador de Pipas
+- goodbooks_book_id: 30
+  isbn: '9788580572902'
+  google_volume_id: j3_ClgEACAAJ
+  titulo: GAROTA EXEMPLAR
+- goodbooks_book_id: 32
+  isbn: '9788525427991'
+  google_volume_id: GSDvmD89Ku4C
+  titulo: Ratos e Homens
+- goodbooks_book_id: 39
+  isbn: '9788556510785'
+  google_volume_id: eSgZzwEACAAJ
+  titulo: A guerra dos tronos
+- goodbooks_book_id: 34
+  isbn: '9788580572186'
+  google_volume_id: 8kvJNAEACAAJ
+  titulo: Cinquenta tons de cinza
+- goodbooks_book_id: 33
+  isbn: '9788531206054'
+  google_volume_id: o0gMQgAACAAJ
+  titulo: Memórias de uma gueixa
+- goodbooks_book_id: 41
+  isbn: '9788580575392'
+  google_volume_id: W_NKvgAACAAJ
+  titulo: LADRAO DE RAIOS, O (CAPA NOVA)
+- goodbooks_book_id: 35
+  isbn: '9788532503251'
+  google_volume_id: CEbeAQAACAAJ
+  titulo: O alquimista
