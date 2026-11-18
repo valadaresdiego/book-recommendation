@@ -227,7 +227,7 @@ Saída esperada (registrada em log): % de Obras com `ol_work_key`, % com descri�
 
 ### 6.3 Gêneros
 
-Lista inicial, a revisar pelo Leitor antes da fase 1. Fica em `catalogo/generos.yaml` com as tags que mapeiam cada Gênero:
+Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catalogo/generos.yaml` com as tags que mapeiam cada Gênero:
 
 | Gênero | Tags de exemplo |
 |---|---|
