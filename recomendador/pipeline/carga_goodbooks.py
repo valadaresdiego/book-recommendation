@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from recomendador.catalogo.isbn import completar_isbn13, normalizar_isbn
 from recomendador.catalogo.tags import tag_util
-from recomendador.db.modelos import Obra, ObraIsbn, ObraTag, OrigemObra
+from recomendador.db.modelos import Obra, ObraIsbn, ObraTag, OrigemIsbn, OrigemObra
 
 log = logging.getLogger(__name__)
 
@@ -78,24 +78,46 @@ def limpar_titulo(titulo: str) -> str:
 
 
 def isbn13_do_goodbooks(isbn10: object, isbn13: object) -> set[str]:
-    """Os dois ISBNs de uma linha de books.csv, normalizados para ISBN-13.
+    """Os ISBNs de uma linha de books.csv, normalizados para ISBN-13.
 
     O CSV perdeu os zeros à esquerda do ISBN-10 e gravou o ISBN-13 em notação científica
-    ("9.78043902348e+12"), sem o dígito verificador. Os 12 primeiros dígitos sobrevivem,
-    então o dígito verificador é recalculado.
+    com 12 algarismos ("9.78006112008e+12"): o dígito verificador sumiu e, quando era 5 ou
+    mais, o 12º algarismo foi arredondado para cima. Recalcular o dígito verificador sobre
+    os 12 algarismos dava um ISBN errado em 4.204 linhas, muitas vezes o de outro livro da
+    mesma editora: *A Tree Grows in Brooklyn* (9780061120077) ficava com o ISBN de
+    *To Kill a Mockingbird* (9780061120084).
+
+    - O ISBN-10 é exato. Se ele é um dos ISBN-13 que o arredondamento explica, vale sozinho.
+    - Senão, o ISBN-13 do CSV entra só quando o arredondamento deixa um candidato só.
     """
     isbns: set[str] = set()
     if (s := _texto(isbn10)) and re.fullmatch(r"\d{6,9}[\dXx]", s):
         if n := normalizar_isbn(s.zfill(10)):
             isbns.add(n)
-    if s := _texto(isbn13):
-        try:
-            digitos = str(int(Decimal(s)))
-        except (InvalidOperation, ValueError):
-            digitos = ""
-        if len(digitos) == 13 and digitos.startswith(("978", "979")):
-            isbns.add(completar_isbn13(digitos[:12]))
-    return isbns
+    candidatos = _candidatos_do_isbn13(isbn13)
+    if isbns & candidatos:
+        return isbns
+    return isbns | candidatos if len(candidatos) == 1 else isbns
+
+
+def _candidatos_do_isbn13(valor: object) -> set[str]:
+    """Os ISBN-13 válidos que, escritos com 12 algarismos, dão `valor`."""
+    if not (s := _texto(valor)):
+        return set()
+    try:
+        numero = Decimal(s)
+        digitos = str(int(numero))
+    except (InvalidOperation, ValueError):
+        return set()
+    if len(digitos) != 13 or not digitos.startswith(("978", "979")):
+        return set()
+    if len(numero.as_tuple().digits) >= 13:  # escrito por inteiro, sem arredondamento
+        return {n} if (n := normalizar_isbn(digitos)) else set()
+    # O 13º algarismo d foi arredondado (empate para o par): os 12 vêm inteiros se d ≤ 5,
+    # e foram somados de 1 se d ≥ 5.
+    corpo = int(digitos[:12])
+    inteiro, somado = completar_isbn13(str(corpo)), completar_isbn13(str(corpo - 1))
+    return {i for i, ok in ((inteiro, inteiro[-1] <= "5"), (somado, somado[-1] >= "5")) if ok}
 
 
 def _linhas_de_obra(books: pd.DataFrame) -> list[dict]:
@@ -189,12 +211,28 @@ def carregar_base(conn: Connection, pasta: Path) -> ResumoCarga:
     log.info("%d Obras gravadas", len(obra_por_gb))
 
     isbns = [
-        {"isbn13": isbn, "obra_id": obra_por_gb[int(b.book_id)]}
+        {"isbn13": isbn, "obra_id": obra_por_gb[int(b.book_id)], "origem": OrigemIsbn.BASE}
         for b in books.itertuples(index=False)
         for isbn in isbn13_do_goodbooks(b.isbn, b.isbn13)
     ]
+    # Os de uma carga anterior que o CSV não dá mais (o ISBN-13 arredondado de antes).
+    conn.execute(
+        delete(ObraIsbn).where(
+            ObraIsbn.origem == OrigemIsbn.BASE, ObraIsbn.isbn13.not_in({i["isbn13"] for i in isbns})
+        )
+    )
     if isbns:
-        conn.execute(insert(ObraIsbn).on_conflict_do_nothing(), isbns)
+        # Um ISBN da Base que o `enriquecer-ol` pôs em outra Obra volta para a dela; um
+        # gravado pela Resolução (origem `leitor`) fica onde está.
+        stmt = insert(ObraIsbn)
+        conn.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[ObraIsbn.isbn13],
+                set_={"obra_id": stmt.excluded.obra_id, "origem": stmt.excluded.origem},
+                where=ObraIsbn.origem == OrigemIsbn.OPEN_LIBRARY,
+            ),
+            isbns,
+        )
 
     linhas_tag = _linhas_de_tag(book_tags, tags, books, obra_por_gb)
     # Troca as tags de leitores; os assuntos da Open Library (contagem = 0) ficam.

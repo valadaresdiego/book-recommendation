@@ -197,13 +197,31 @@ def test_registrar_grava_a_edicao_e_os_isbns_dela(
     assert edicao["titulo"] == "Duna"
     assert edicao["idioma"] == "pt"
     assert edicao["ol_edition_key"] == "/books/OL28969075M"
-    # O ISBN da Edição passa a resolver pela regra 1 da próxima vez.
-    assert (
-        conexao.execute(
-            text("SELECT obra_id FROM obra_isbn WHERE isbn13 = :i"), {"i": DUNA_ALEPH}
-        ).scalar_one()
-        == dune
+    # O ISBN da Edição passa a resolver pela regra 1 da próxima vez, e o `enriquecer-ol`
+    # não o apaga (origem `leitor`).
+    obra_id, origem = conexao.execute(
+        text("SELECT obra_id, origem FROM obra_isbn WHERE isbn13 = :i"), {"i": DUNA_ALEPH}
+    ).one()
+    assert (obra_id, str(origem)) == (dune, "leitor")
+
+
+def test_isbn_da_open_library_confirmado_pelo_leitor_passa_a_ser_do_leitor(
+    conexao: Connection, ol: OpenLibrary, duna_aleph: ResultadoBusca
+) -> None:
+    """A Edição resolvida pela regra 1 com um ISBN vindo da Open Library: o Leitor confirmou
+    a Obra, e o `enriquecer-ol` não pode mais tirar o ISBN dela."""
+    dune = _dune(conexao)
+    conexao.execute(
+        text("INSERT INTO obra_isbn VALUES (:i, :o, 'open_library')"),
+        {"i": DUNA_ALEPH, "o": dune},
     )
+
+    registrar_resolucao(conexao, resolver_obra(conexao, duna_aleph, ol))
+
+    origem = conexao.execute(
+        text("SELECT origem FROM obra_isbn WHERE isbn13 = :i"), {"i": DUNA_ALEPH}
+    ).scalar_one()
+    assert str(origem) == "leitor"
 
 
 def test_edicao_em_portugues_vira_o_titulo_de_exibicao_se_nao_houver(

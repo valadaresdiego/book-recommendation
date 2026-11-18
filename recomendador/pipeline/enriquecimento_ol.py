@@ -47,7 +47,7 @@ class ResumoEnriquecimento:
     com_work: int
     com_descricao: int
     com_titulo_pt: int
-    isbns_novos: int
+    isbns_da_open_library: int  # em `obra_isbn` depois da execução
     trocadas_por_irma: int = 0
     trocadas_por_errada: int = 0
     descartadas: int = 0
@@ -102,7 +102,11 @@ def _work_da_edicao(dados: dict) -> str | None:
 
 
 def _votar_works(editions: Path, obra_por_isbn: dict[str, int]) -> Counter[tuple[int, str]]:
-    """Passada 1: cada Edição com ISBN conhecido vota no work dela para a Obra."""
+    """Passada 1: cada Edição com ISBN da Obra vota no work dela para a Obra.
+
+    `obra_por_isbn` traz só os ISBNs da Base de coleitura e do Leitor: os de origem Open
+    Library vieram da work escolhida antes e votariam sempre nela, mesmo errada.
+    """
     votos: Counter[tuple[int, str]] = Counter()
     for linha in _linhas(editions):
         candidatos = {
@@ -168,6 +172,7 @@ class Work:
 
     titulos: frozenset[str]  # normalizados; com subtítulo, só "título subtítulo"
     autores: frozenset[str]  # chaves /authors/...
+    sem_subtitulo: str = ""  # o título normalizado, sem o subtítulo
 
     @classmethod
     def de(cls, dados: dict) -> "Work":
@@ -181,11 +186,15 @@ class Work:
             chave = autor.get("key") if isinstance(autor, dict) else autor
             if isinstance(chave, str) and chave.startswith("/authors/"):
                 autores.add(chave)
-        return cls(frozenset(t for t in titulos if t), frozenset(autores))
+        return cls(frozenset(t for t in titulos if t), frozenset(autores), normalizar(titulo))
 
     @property
     def palavras(self) -> frozenset[str]:
         return frozenset(p for t in self.titulos for p in palavras_da_busca(t))
+
+    def tem_o_titulo_de(self, obra: ObraDaBase) -> bool:
+        """O título da Obra é o da work, com ou sem o subtítulo."""
+        return bool(obra.titulos & (self.titulos | {self.sem_subtitulo}))
 
 
 def _titulos_da_linha(linha: str) -> Iterator[str]:
@@ -270,7 +279,9 @@ def conferir_works(
       Obra (o ISBN caiu na work errada na Open Library, ou numa de outro livro do mesmo
       autor). Ela sai da disputa se houver candidata, ou se for de outro autor.
     - Vence a work com mais Edições no dump; no empate, a votada e depois a menor chave.
-    - Uma work fica com uma Obra só: a que a escolheu como votada primeiro, depois a de
+    - Uma work fica com uma Obra só. Na disputa, passa na frente a Obra de título igual
+      ao da work (*Hamlet* contra o roteiro de *Hamlet* de Branagh, cujo ISBN está numa
+      Edição da work de *Hamlet*); depois, a que a escolheu como votada; depois, a de
       menor id.
     """
     obras = list(obras)
@@ -288,7 +299,16 @@ def conferir_works(
             candidatas.add(v)
         opcoes[obra.id] = sorted(candidatas, key=lambda w: (-edicoes[w], w != v, w))
 
-    primeiro = sorted(opcoes, key=lambda o: (not opcoes[o] or opcoes[o][0] != votada.get(o), o))
+    por_id = {obra.id: obra for obra in obras}
+
+    def prioridade(obra_id: int) -> tuple[bool, bool, int]:
+        if not opcoes[obra_id]:
+            return True, True, obra_id
+        w = opcoes[obra_id][0]
+        titulo_igual = w in works and works[w].tem_o_titulo_de(por_id[obra_id])
+        return not titulo_igual, w != votada.get(obra_id), obra_id
+
+    primeiro = sorted(opcoes, key=prioridade)
     tomadas: set[str] = set()
     final: dict[int, str] = {}
     for obra_id in primeiro:
@@ -401,7 +421,8 @@ def enriquecer_ol(conn: Connection, pasta_dumps: Path) -> ResumoEnriquecimento:
         conn.execute(
             text(
                 "SELECT i.isbn13, i.obra_id FROM obra_isbn i "
-                "JOIN obra o ON o.id = i.obra_id WHERE o.origem = 'base'"
+                "JOIN obra o ON o.id = i.obra_id "
+                "WHERE o.origem = 'base' AND i.origem <> 'open_library'"
             )
         ).all()
     )
@@ -422,7 +443,11 @@ def enriquecer_ol(conn: Connection, pasta_dumps: Path) -> ResumoEnriquecimento:
         ).all()
     )
 
-    log.info("Passada 1/4 (%s): works das %d ISBNs conhecidos", editions.name, len(obra_por_isbn))
+    log.info(
+        "Passada 1/4 (%s): works dos %d ISBNs da Base e do Leitor",
+        editions.name,
+        len(obra_por_isbn),
+    )
     votada = escolher_works(_votar_works(editions, obra_por_isbn), works_ocupados)
 
     log.info("Passada 2/4 (%s): títulos e autores das works", works.name)
@@ -455,8 +480,7 @@ def enriquecer_ol(conn: Connection, pasta_dumps: Path) -> ResumoEnriquecimento:
         {o: assuntos[w] for o, w in work_por_obra.items() if w in assuntos},
         descricao_velha,
     )
-    novos = len({i for i, _ in isbns} - set(obra_por_isbn))
-    resumo = _resumo(conn, len(titulo_pt), novos, conferencia)
+    resumo = _resumo(conn, len(titulo_pt), conferencia)
     _registrar(resumo)
     return resumo
 
@@ -475,6 +499,7 @@ def _gravar(
 ) -> None:
     # Limpa o que veio de uma execução anterior, para o resultado depender só do dump atual.
     conn.execute(text("UPDATE obra SET ol_work_key = NULL WHERE origem = 'base'"))
+    conn.execute(text("DELETE FROM obra_isbn WHERE origem = 'open_library'"))
     if descricao_velha:
         conn.execute(
             text("UPDATE obra SET descricao = NULL WHERE id = :o AND descricao = :d"),
@@ -493,7 +518,11 @@ def _gravar(
         )
     if isbns:
         conn.execute(
-            text("INSERT INTO obra_isbn (isbn13, obra_id) VALUES (:i, :o) ON CONFLICT DO NOTHING"),
+            # Os ISBNs da Base de coleitura e do Leitor ficam com a Obra que já têm.
+            text(
+                "INSERT INTO obra_isbn (isbn13, obra_id, origem) "
+                "VALUES (:i, :o, 'open_library') ON CONFLICT DO NOTHING"
+            ),
             [{"i": i, "o": o} for i, o in dict(isbns).items()],
         )
     conn.execute(
@@ -525,22 +554,21 @@ _CONTAGENS = text(
     """
     SELECT count(*),
            count(ol_work_key),
-           count(descricao)
+           count(descricao),
+           (SELECT count(*) FROM obra_isbn WHERE origem = 'open_library')
     FROM obra WHERE origem = 'base'
     """
 )
 
 
-def _resumo(
-    conn: Connection, com_titulo_pt: int, isbns_novos: int, c: Conferencia
-) -> ResumoEnriquecimento:
-    obras, com_work, com_descricao = conn.execute(_CONTAGENS).one()
+def _resumo(conn: Connection, com_titulo_pt: int, c: Conferencia) -> ResumoEnriquecimento:
+    obras, com_work, com_descricao, isbns_ol = conn.execute(_CONTAGENS).one()
     return ResumoEnriquecimento(
         obras=obras,
         com_work=com_work,
         com_descricao=com_descricao,
         com_titulo_pt=com_titulo_pt,
-        isbns_novos=isbns_novos,
+        isbns_da_open_library=isbns_ol,
         **{k: getattr(c, k) for k in _CATEGORIAS},
     )
 
@@ -550,7 +578,7 @@ def _registrar(r: ResumoEnriquecimento) -> None:
     log.info("  com ol_work_key:        %6d (%.1f %%)", r.com_work, r.pct(r.com_work))
     log.info("  com descrição:          %6d (%.1f %%)", r.com_descricao, r.pct(r.com_descricao))
     log.info("  com título em português:%6d (%.1f %%)", r.com_titulo_pt, r.pct(r.com_titulo_pt))
-    log.info("  ISBNs novos em obra_isbn: %d", r.isbns_novos)
+    log.info("  ISBNs da Open Library em obra_isbn: %d", r.isbns_da_open_library)
     log.info("Conferência das works votadas pelos ISBNs:")
     log.info("  trocadas por uma de mesmo título e autor com mais Edições: %d", r.trocadas_por_irma)
     log.info(

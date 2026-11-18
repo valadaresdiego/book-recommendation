@@ -110,6 +110,7 @@ def _obra(
     tags: dict[str, int] | None = None,
     autor: str | None = None,
 ) -> int:
+    """Uma Obra da Base de coleitura com o ISBN dela (origem `base`)."""
     obra_id = conexao.execute(
         text(
             "INSERT INTO obra (titulo, titulo_exibicao, autores, origem) "
@@ -117,13 +118,29 @@ def _obra(
         ),
         {"t": titulo, "a": [autor] if autor else []},
     ).scalar_one()
-    conexao.execute(text("INSERT INTO obra_isbn VALUES (:i, :o)"), {"i": isbn, "o": obra_id})
+    _isbn(conexao, isbn, obra_id, "base")
     for tag, contagem in (tags or {}).items():
         conexao.execute(
             text("INSERT INTO obra_tag VALUES (:o, :t, :c)"),
             {"o": obra_id, "t": tag, "c": contagem},
         )
     return obra_id
+
+
+def _isbn(conexao: Connection, isbn: str, obra_id: int, origem: str) -> None:
+    conexao.execute(
+        text("INSERT INTO obra_isbn (isbn13, obra_id, origem) VALUES (:i, :o, :g)"),
+        {"i": isbn, "o": obra_id, "g": origem},
+    )
+
+
+def _isbns(conexao: Connection, *isbns: str) -> dict[str, tuple[int, str]]:
+    """Obra e origem de cada ISBN que está em `obra_isbn`."""
+    linhas = conexao.execute(
+        text("SELECT isbn13, obra_id, origem FROM obra_isbn WHERE isbn13 = ANY(:i)"),
+        {"i": list(isbns)},
+    )
+    return {i: (o, str(origem)) for i, o, origem in linhas}
 
 
 def _linha(conexao: Connection, obra_id: int) -> dict:
@@ -180,7 +197,7 @@ def test_enriquece_as_obras(conexao: Connection, dumps: Path, obras: dict[str, i
     assert neuromancer["enriquecida_em"] is not None
 
     assert resumo == ResumoEnriquecimento(
-        obras=3, com_work=2, com_descricao=2, com_titulo_pt=1, isbns_novos=2
+        obras=3, com_work=2, com_descricao=2, com_titulo_pt=1, isbns_da_open_library=2
     )
 
 
@@ -192,7 +209,7 @@ def test_enriquecimento_e_idempotente(
 
     segunda = enriquecer_ol(conexao, dumps)
 
-    assert segunda == ResumoEnriquecimento(**{**vars(primeira), "isbns_novos": 0})
+    assert segunda == primeira
     assert conexao.execute(text("SELECT count(*) FROM obra_tag")).scalar_one() == tags
     assert _linha(conexao, obras["duna"])["titulo_exibicao"] == "Duna"
 
@@ -348,11 +365,96 @@ def test_work_de_outra_obra_e_trocada_pela_de_mesmo_titulo_e_autor(
     assert (resumo.trocadas_por_errada, resumo.trocadas_por_irma) == (1, 1)
     assert (resumo.descartadas, resumo.achadas) == (0, 0)
 
-    # Na execução seguinte os ISBNs novos já votam na work certa, e nada muda.
+    # Na execução seguinte o ISBN da Base vota de novo em Shōgun, e a conferência corrige.
     segunda = enriquecer_ol(conexao, tmp_path)
     assert _linha(conexao, duna)["ol_work_key"] == "/works/OL10W"
     assert _linha(conexao, shogun)["ol_work_key"] == "/works/OL20W"
     assert segunda.com_work == resumo.com_work
+
+
+SHAKESPEARE = "/authors/OL40A"
+HAMLET = completar_isbn13("978074347712")
+HAMLET_PT = completar_isbn13("978852540001")
+NOITE = completar_isbn13("978074347717")
+SUMIU = completar_isbn13("978000000001")
+DA_ESTANTE = completar_isbn13("978857657999")
+
+
+def test_isbns_da_open_library_sao_refeitos_a_cada_execucao(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    """O caso de *Hamlet*: uma execução anterior deixou em *Twelfth Night* um ISBN de uma
+    work errada, e a Edição de *Hamlet* buscada por ele caía em *Twelfth Night*.
+
+    Os ISBNs de origem Open Library saem e voltam só os das works escolhidas agora. Os da
+    Base de coleitura e os gravados pela Resolução (Leitor) ficam onde estão.
+    """
+    _dump(
+        tmp_path / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [
+            ("/books/OL1M", _edicao("/works/OL40W", isbn13=[HAMLET])),
+            ("/books/OL2M", _edicao("/works/OL40W", [HAMLET_PT], idioma="por", titulo="Hamlet")),
+            ("/books/OL3M", _edicao("/works/OL41W", isbn13=[NOITE])),
+        ],
+    )
+    _dump(
+        tmp_path / "ol_dump_works_2026-10-31.txt.gz",
+        "work",
+        [
+            ("/works/OL40W", _work("Hamlet", SHAKESPEARE)),
+            ("/works/OL41W", _work("Twelfth Night", SHAKESPEARE)),
+        ],
+    )
+    hamlet = _obra(conexao, "Hamlet", HAMLET, autor="William Shakespeare")
+    noite = _obra(conexao, "Twelfth Night", NOITE, autor="William Shakespeare")
+    _isbn(conexao, HAMLET_PT, noite, "open_library")  # de uma work errada, antes
+    _isbn(conexao, SUMIU, noite, "open_library")  # de uma Edição que saiu do dump
+    _isbn(conexao, DA_ESTANTE, noite, "leitor")
+
+    resumo = enriquecer_ol(conexao, tmp_path)
+
+    assert _isbns(conexao, HAMLET, HAMLET_PT, NOITE, SUMIU, DA_ESTANTE) == {
+        HAMLET: (hamlet, "base"),
+        HAMLET_PT: (hamlet, "open_library"),
+        NOITE: (noite, "base"),
+        DA_ESTANTE: (noite, "leitor"),
+    }
+    assert _linha(conexao, noite)["ol_work_key"] == "/works/OL41W"
+    assert resumo.isbns_da_open_library == 1
+
+
+MESSIAS_2 = completar_isbn13("978044117268")
+
+
+def test_isbns_da_open_library_nao_votam_na_work(conexao: Connection, tmp_path: Path) -> None:
+    """Só os ISBNs da Base de coleitura e do Leitor votam. Os de origem Open Library vieram
+    da work escolhida numa execução anterior e manteriam um erro dela para sempre."""
+    _dump(
+        tmp_path / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [
+            ("/books/OL1M", _edicao("/works/OL1W", isbn13=[DUNA_EN])),
+            ("/books/OL2M", _edicao("/works/OL31W", isbn13=[MESSIAS])),
+            ("/books/OL3M", _edicao("/works/OL31W", isbn13=[MESSIAS_2])),
+        ],
+    )
+    _dump(
+        tmp_path / "ol_dump_works_2026-10-31.txt.gz",
+        "work",
+        [
+            ("/works/OL1W", _work("Dune", HERBERT)),
+            ("/works/OL31W", _work("Dune Messiah", HERBERT)),
+        ],
+    )
+    duna = _obra(conexao, "Dune", DUNA_EN, autor="Frank Herbert")
+    _isbn(conexao, MESSIAS, duna, "open_library")
+    _isbn(conexao, MESSIAS_2, duna, "open_library")
+
+    enriquecer_ol(conexao, tmp_path)
+
+    assert _linha(conexao, duna)["ol_work_key"] == "/works/OL1W"
+    assert _isbns(conexao, DUNA_EN, MESSIAS, MESSIAS_2) == {DUNA_EN: (duna, "base")}
 
 
 def _obra_base(id: int, titulo: str, autor: str, original: str | None = None) -> ObraDaBase:
@@ -428,3 +530,24 @@ def test_conferir_works() -> None:
         13: "idiot",
     }
     assert (c.trocadas_por_irma, c.trocadas_por_errada, c.descartadas, c.achadas) == (0, 1, 1, 1)
+
+
+def test_work_disputada_fica_com_a_obra_de_titulo_igual() -> None:
+    """O caso de *Hamlet*: a Base tem também o roteiro de Branagh, cujo ISBN está numa
+    Edição da work principal de *Hamlet*. O roteiro votou nela e *Hamlet* só a achou pelo
+    título, mas é *Hamlet* que tem o título igual ao da work."""
+    obras = [
+        _obra_base(1, "Hamlet", "William Shakespeare"),
+        _obra_base(2, "Hamlet: Screenplay, Introduction And Film Diary", "Kenneth Branagh"),
+    ]
+    works = {
+        "hamlet": Work.de(_work("Hamlet", SHAKESPEARE)),
+        "hamlet-menor": Work.de(_work("Hamlet", SHAKESPEARE)),
+    }
+    votada = {1: "hamlet-menor", 2: "hamlet"}
+    mesmo_titulo = {1: {"hamlet", "hamlet-menor"}}
+    edicoes = Counter({"hamlet": 1500, "hamlet-menor": 80})
+
+    c = conferir_works(obras, votada, works, mesmo_titulo, edicoes)
+
+    assert c.work_por_obra == {1: "hamlet"}
