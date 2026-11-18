@@ -1,4 +1,5 @@
-"""Alembic: a URL vem de `-x url=...` (testes) ou de DATABASE_URL no .env."""
+"""Alembic: a URL vem de `-x url=...`, de `config.attributes["url"]` (chamada pelo pacote)
+ou de DATABASE_URL no .env."""
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -10,7 +11,11 @@ target_metadata = Base.metadata
 
 
 def _url() -> str:
-    return context.get_x_argument(as_dictionary=True).get("url") or app_config().database_url
+    return (
+        context.get_x_argument(as_dictionary=True).get("url")
+        or context.config.attributes.get("url")
+        or app_config().database_url
+    )
 
 
 def run_migrations_offline() -> None:

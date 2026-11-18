@@ -1,26 +1,49 @@
 # Tags do goodbooks-10k que descrevem a relação do leitor com o livro, não o livro (SPEC §6.1).
+# Anos, notas ("5-stars") e tags sem letras são removidos por padrão em catalogo/tags.py.
+# Status de leitura
 to-read
 currently-reading
+re-read
+abandoned
+dnf
+did-not-finish
+maybe
+# Preferência pessoal
 favorites
 favourites
+favorite
+favourite
+favorite-books
+all-time-favorites
+all-time-favourites
+# Posse e formato
 owned
+own
+own-it
+i-own
+have
 books-i-own
 owned-books
 my-books
 my-library
+borrowed
+to-buy
+wish-list
+wishlist
 kindle
 ebook
 ebooks
 e-book
-library
-default
-wish-list
-wishlist
-to-buy
+e-books
 audiobook
 audiobooks
 audio
-re-read
-abandoned
-dnf
+audio-book
+audio-books
+audible
+library
+# Organização genérica
+default
 book-club
+bookclub
+books

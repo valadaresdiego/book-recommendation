@@ -20,7 +20,10 @@ Registro pessoal das minhas Leituras, com Nota, e Sugestões do que ler a seguir
 cp .env.example .env            # e preencha GOOGLE_BOOKS_API_KEY e o contato do User-Agent
 uv sync                         # dependências base + dev
 docker compose up -d --wait db  # Postgres 17 + pgvector em 127.0.0.1:5433
-uv run python -m recomendador db-subir
+uv run python -m recomendador db-subir        # migrações, Leitor e Gêneros
+uv run python -m recomendador carregar-base   # baixa e carrega o goodbooks-10k (~30 MB, segundos)
+uv run python -m recomendador enriquecer-ol --baixar  # dumps da Open Library (~17 GB; ~1 h com o download)
+uv run python -m recomendador mapear-generos  # liga as Obras aos Gêneros (catalogo/generos.yaml)
 uv run pytest
 uv run streamlit run app/main.py --server.address 127.0.0.1
 ```
