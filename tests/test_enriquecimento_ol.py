@@ -11,7 +11,10 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.isbn import completar_isbn13
 from recomendador.pipeline.enriquecimento_ol import (
     DumpAusente,
+    ObraDaBase,
     ResumoEnriquecimento,
+    Work,
+    conferir_works,
     enriquecer_ol,
     escolher_works,
 )
@@ -29,6 +32,18 @@ def _dump(caminho: Path, tipo: str, registros: list[tuple[str, dict | str]]) -> 
         for chave, dados in registros:
             corpo = dados if isinstance(dados, str) else json.dumps(dados)
             f.write(f"/type/{tipo}\t{chave}\t1\t2026-10-01T00:00:00\t{corpo}\n")
+
+
+def _work(titulo: str, *autores: str, subtitulo=None, descricao=None) -> dict:
+    d: dict = {
+        "title": titulo,
+        "authors": [{"type": {"key": "/type/author_role"}, "author": {"key": a}} for a in autores],
+    }
+    if subtitulo:
+        d["subtitle"] = subtitulo
+    if descricao:
+        d["description"] = descricao
+    return d
 
 
 def _edicao(work: str, isbn13=(), isbn10=(), idioma="eng", titulo="x", data=None) -> dict:
@@ -88,13 +103,19 @@ def dumps(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _obra(conexao: Connection, titulo: str, isbn: str, tags: dict[str, int] | None = None) -> int:
+def _obra(
+    conexao: Connection,
+    titulo: str,
+    isbn: str,
+    tags: dict[str, int] | None = None,
+    autor: str | None = None,
+) -> int:
     obra_id = conexao.execute(
         text(
-            "INSERT INTO obra (titulo, titulo_exibicao, origem) VALUES (:t, :t, 'base') "
-            "RETURNING id"
+            "INSERT INTO obra (titulo, titulo_exibicao, autores, origem) "
+            "VALUES (:t, :t, :a, 'base') RETURNING id"
         ),
-        {"t": titulo},
+        {"t": titulo, "a": [autor] if autor else []},
     ).scalar_one()
     conexao.execute(text("INSERT INTO obra_isbn VALUES (:i, :o)"), {"i": isbn, "o": obra_id})
     for tag, contagem in (tags or {}).items():
@@ -248,3 +269,162 @@ def test_isbn_brasileiro_vale_como_edicao_em_portugues_sem_idioma(
     assert _linha(conexao, fundacao)["titulo_exibicao"] == "Fundação"
     assert _linha(conexao, neuromancer)["titulo_exibicao"] == "Neuromancer"
     assert resumo.com_titulo_pt == 2
+
+
+HERBERT, CLAVELL, OUTRO = "/authors/OL1A", "/authors/OL9A", "/authors/OL7A"
+DUNA_HODDER = completar_isbn13("978034083993")  # cai em Shōgun na Open Library
+DUNA_ACE = completar_isbn13("978044101359")
+MESSIAS = completar_isbn13("978044117269")
+SHOGUN = completar_isbn13("978044017800")
+XOGUM_BR = completar_isbn13("978853252001")
+
+
+def test_work_de_outra_obra_e_trocada_pela_de_mesmo_titulo_e_autor(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    """O caso de *Dune*: o único ISBN da Base aponta para a work de *Shōgun*.
+
+    A work certa é achada pelo título e pelas chaves de autor de outra Obra do mesmo autor
+    (*Dune Messiah*); entre as works "Dune" de Herbert, vence a com mais Edições. *Shōgun*,
+    cuja Obra estava numa work duplicada com menos Edições, fica com a work principal.
+    """
+    _dump(
+        tmp_path / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [
+            ("/books/OL1M", _edicao("/works/OL20W", isbn10=["0340839937"])),
+            ("/books/OL2M", _edicao("/works/OL20W", [XOGUM_BR], idioma="por", titulo="Xógum")),
+            ("/books/OL3M", _edicao("/works/OL20W")),
+            ("/books/OL4M", _edicao("/works/OL21W", isbn13=[SHOGUN])),
+            ("/books/OL5M", _edicao("/works/OL31W", isbn13=[MESSIAS])),
+            ("/books/OL6M", _edicao("/works/OL10W", isbn13=[DUNA_ACE])),
+            ("/books/OL7M", _edicao("/works/OL10W", [DUNA_PT], idioma="por", titulo="Duna")),
+            ("/books/OL8M", _edicao("/works/OL10W")),
+            ("/books/OL9M", _edicao("/works/OL11W")),  # duplicata pequena
+            # Mais Edições, mas não são a Obra: outro título (subtítulo) ou outro autor.
+            *[(f"/books/OL1{i}M", _edicao("/works/OL12W")) for i in range(5)],
+            *[(f"/books/OL2{i}M", _edicao("/works/OL13W")) for i in range(5)],
+        ],
+    )
+    _dump(
+        tmp_path / "ol_dump_works_2026-10-31.txt.gz",
+        "work",
+        [
+            ("/works/OL10W", _work("Dune", HERBERT, descricao="Em Arrakis...")),
+            ("/works/OL11W", _work("Dune", HERBERT)),
+            ("/works/OL12W", _work("Dune", HERBERT, OUTRO, subtitulo="House Harkonnen")),
+            ("/works/OL13W", _work("Dune", OUTRO)),
+            ("/works/OL20W", _work("Shōgun", CLAVELL, descricao="Blackthorne...")),
+            ("/works/OL21W", _work("Shogun", CLAVELL)),
+            ("/works/OL31W", _work("Dune Messiah", HERBERT)),
+        ],
+    )
+    duna = _obra(conexao, "Dune", DUNA_HODDER, autor="Frank Herbert")
+    _obra(conexao, "Dune Messiah", MESSIAS, autor="Frank Herbert")
+    shogun = _obra(conexao, "Shōgun", SHOGUN, autor="James Clavell")
+    # O que uma execução anterior deixou: a descrição de Shōgun em Dune.
+    conexao.execute(
+        text(
+            "UPDATE obra SET ol_work_key = '/works/OL20W', descricao = 'Blackthorne...' "
+            "WHERE id = :o"
+        ),
+        {"o": duna},
+    )
+
+    resumo = enriquecer_ol(conexao, tmp_path)
+
+    linha = _linha(conexao, duna)
+    assert linha["ol_work_key"] == "/works/OL10W"
+    assert linha["descricao"] == "Em Arrakis..."
+    assert linha["titulo_exibicao"] == "Duna"
+    isbns = _consultar(conexao, "SELECT isbn13 FROM obra_isbn WHERE obra_id = :o", duna)
+    assert {DUNA_ACE, DUNA_PT} <= isbns
+    linha = _linha(conexao, shogun)
+    assert linha["ol_work_key"] == "/works/OL20W"
+    assert linha["titulo_exibicao"] == "Xógum"
+    assert XOGUM_BR in _consultar(
+        conexao, "SELECT isbn13 FROM obra_isbn WHERE obra_id = :o", shogun
+    )
+    assert (resumo.trocadas_por_errada, resumo.trocadas_por_irma) == (1, 1)
+    assert (resumo.descartadas, resumo.achadas) == (0, 0)
+
+    # Na execução seguinte os ISBNs novos já votam na work certa, e nada muda.
+    segunda = enriquecer_ol(conexao, tmp_path)
+    assert _linha(conexao, duna)["ol_work_key"] == "/works/OL10W"
+    assert _linha(conexao, shogun)["ol_work_key"] == "/works/OL20W"
+    assert segunda.com_work == resumo.com_work
+
+
+def _obra_base(id: int, titulo: str, autor: str, original: str | None = None) -> ObraDaBase:
+    return ObraDaBase.de(id, titulo, original, [autor])
+
+
+def test_conferir_works() -> None:
+    king, gibson, gibson_2, tolkien = "/authors/K", "/authors/G", "/authors/G2", "/authors/T"
+    obras = [
+        _obra_base(1, "Carrie", "Stephen King"),
+        _obra_base(2, "It", "Stephen King"),
+        _obra_base(3, "Burning Chrome", "William Gibson"),
+        _obra_base(4, "Neuromancer", "William Gibson"),
+        _obra_base(5, "The Hobbit", "J.R.R. Tolkien", "The Hobbit or There and Back Again"),
+        _obra_base(6, "The Hobbit", "J.R.R. Tolkien"),  # a mesma Obra repetida na Base
+        _obra_base(7, "Count Zero", "William Gibson"),
+        _obra_base(8, "The Demon King", "Cinda Williams Chima"),
+        _obra_base(9, "The Gray Wolf Throne", "Cinda Williams Chima"),
+        _obra_base(10, "Kaleidoscope", "Danielle Steel"),
+        _obra_base(11, "Zoya", "Danielle Steel"),
+        _obra_base(12, "Crime and Punishment", "Fyodor Dostoyevsky"),
+        _obra_base(13, "The Idiot", "Fyodor Dostoyevsky"),
+    ]
+    chima, steel, dost = "/authors/CH", "/authors/S", "/authors/D"
+    works = {
+        "carrie": Work.de(_work("Carrie", king)),
+        "it": Work.de(_work("It", king)),
+        "it-outro": Work.de(_work("It", "/authors/X")),
+        "chrome": Work.de(_work("Burning Chrome", gibson)),
+        "errada": Work.de(_work("Shōgun", "/authors/C")),
+        "hobbit": Work.de(_work("The Hobbit", tolkien, subtitulo="or There and Back Again")),
+        "hobbit-dup": Work.de(_work("The Hobbit", tolkien)),
+        "zero": Work.de(_work("Count Zero", gibson_2)),  # outra chave de Gibson na OL
+        "exiled": Work.de(_work("The Exiled Queen", chima)),
+        "demon": Work.de(_work("The Demon King", chima)),
+        "gray": Work.de(_work("The Gray Wolf Throne", chima)),
+        "kaleid": Work.de(_work("Kaleidscope", steel)),
+        "kaleido-dup": Work.de(_work("Kaleidoscope", steel)),
+        "zoya": Work.de(_work("Zoya", steel)),
+        "crime": Work.de(_work("Преступление и наказание", dost)),
+        "crime-en": Work.de(_work("Crime and Punishment", dost)),
+        "idiot": Work.de(_work("The Idiot", dost)),
+    }
+    votada = {
+        **{1: "carrie", 3: "chrome", 4: "errada", 5: "hobbit-dup", 6: "hobbit", 7: "zero"},
+        **{8: "exiled", 9: "gray", 10: "kaleid", 11: "zoya", 12: "crime", 13: "idiot"},
+    }
+    mesmo_titulo = {
+        **{2: {"it", "it-outro"}, 5: {"hobbit", "hobbit-dup"}, 6: {"hobbit-dup"}},
+        **{8: {"demon"}, 10: {"kaleido-dup"}, 12: {"crime-en"}},
+    }
+    edicoes = Counter(
+        {"it": 5, "it-outro": 9, "hobbit": 50, "hobbit-dup": 2, "errada": 99}
+        | {"exiled": 11, "demon": 8, "kaleid": 48, "kaleido-dup": 2, "crime": 1178, "crime-en": 18}
+    )
+
+    c = conferir_works(obras, votada, works, mesmo_titulo, edicoes)
+
+    assert c.work_por_obra == {
+        1: "carrie",
+        2: "it",  # achada: título e chave de autor de King; a de outro autor não conta
+        3: "chrome",
+        # 4: a votada é de outro autor e outro título, e não há outra: sai.
+        5: "hobbit-dup",  # a principal já é da Obra 6, que votou nela
+        6: "hobbit",
+        7: "zero",  # outra chave de autor, mas título igual: fica
+        # Outro livro do mesmo autor: perde para a de título igual, mesmo tendo mais Edições.
+        8: "demon",
+        9: "gray",
+        10: "kaleid",  # erro de digitação no título não faz parecer outra Obra
+        11: "zoya",
+        12: "crime",  # título em cirílico: não dá para comparar, fica a votada
+        13: "idiot",
+    }
+    assert (c.trocadas_por_irma, c.trocadas_por_errada, c.descartadas, c.achadas) == (0, 1, 1, 1)

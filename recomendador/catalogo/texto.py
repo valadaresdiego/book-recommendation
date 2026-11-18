@@ -14,6 +14,8 @@ _SUFIXOS = frozenset("jr junior filho neto sobrinho sr ii iii iv".split())
 
 def normalizar(texto: str) -> str:
     """Minúsculas, sem acento e sem pontuação, com espaços simples."""
+    if texto.isascii():  # caminho rápido, para os milhões de títulos do dump de works
+        return _NAO_ALFANUMERICO.sub(" ", texto.lower()).strip()
     sem_acento = unicodedata.normalize("NFKD", texto)
     sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
     return _NAO_ALFANUMERICO.sub(" ", sem_acento.lower()).strip()
