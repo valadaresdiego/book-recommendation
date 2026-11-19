@@ -9,6 +9,8 @@ from sqlalchemy import Connection, text
 log = logging.getLogger(__name__)
 
 METRICA = "ndcg@20"
+# SPEC §9.4: só compara NDCG@20 com a mesma divisão e a mesma configuração.
+_MESMA_CONFIGURACAO = ("divisao", "beta")
 
 
 class AtivacaoRecusada(RuntimeError):
@@ -62,6 +64,12 @@ def _conferir_metricas(conn: Connection, execucao_id: int, tipo: str, metricas: 
     ).one_or_none()
     if ativa is None or not ativa.metricas or METRICA not in ativa.metricas:
         return
+    for chave in _MESMA_CONFIGURACAO:
+        if metricas.get(chave) != ativa.metricas.get(chave):
+            raise AtivacaoRecusada(
+                f"As execuções {execucao_id} e {ativa.id} foram avaliadas com {chave} "
+                f"diferente: rode `avaliar {execucao_id} {ativa.id}` antes, ou use --forcar"
+            )
     nova, atual = metricas[METRICA], ativa.metricas[METRICA]
     if nova < atual:
         raise AtivacaoRecusada(
@@ -92,3 +100,14 @@ def _copiar_embeddings(conn: Connection, execucao_id: int, pasta: Path) -> None:
 
 def _vetor(v: np.ndarray) -> str:
     return "[" + ",".join(f"{x:.6g}" for x in v) + "]"
+
+
+def copiar_vizinhos(conn: Connection, linhas: list[tuple]) -> None:
+    """Grava (execucao_id, obra_id, vizinho_id, similaridade, posicao) com COPY, na mesma
+    transação: 500 mil linhas em segundos."""
+    cursor = conn.connection.driver_connection.cursor()
+    with cursor.copy(
+        "COPY vizinho (execucao_id, obra_id, vizinho_id, similaridade, posicao) FROM STDIN"
+    ) as copia:
+        for linha in linhas:
+            copia.write_row(linha)

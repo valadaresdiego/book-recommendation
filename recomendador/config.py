@@ -23,10 +23,12 @@ class Config(BaseSettings):
     data_dir: Path = Path("./data")
     embedding_model: str = ""
 
-    # SPEC §8.5: fase 2 usa só conteúdo (α = 1); a fase 3 calibra.
-    alfa: float = 1.0
-    # ADR 0006: a soma do §8.5 é multiplicada por (1 + popularidade)^β.
-    beta_popularidade: float = 0.25
+    # SPEC §8.5: peso do conteúdo na mistura com a Coleitura, com as escalas já igualadas.
+    # Calibrado na fase 3 (ADR 0007).
+    alfa: float = 0.25
+    # ADR 0006: a soma do §8.5 é multiplicada por (1 + popularidade)^β. Com a Coleitura,
+    # β = 0 venceu (ADR 0007).
+    beta_popularidade: float = 0.0
     max_sugestoes: int = 20
     min_notas_para_sugerir: int = 3
 

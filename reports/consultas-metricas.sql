@@ -71,3 +71,26 @@ SELECT (SELECT count(*) FROM leitura WHERE leitor_id = :leitor AND origem = 'sug
            AS nota_media_no_evento,
        (SELECT round(avg(nota), 2) FROM leitura WHERE leitor_id = :leitor AND nota IS NOT NULL)
            AS nota_media_da_estante;
+
+-- SPEC §14, fase 3: taxa de correspondência das Leituras com Obras da Base de coleitura
+-- (meta ≥ 40 %; abaixo disso, reabrir a escolha da Base, PRD §9).
+SELECT count(*) AS leituras,
+       count(*) FILTER (WHERE o.origem = 'base') AS ligadas_a_base,
+       round(100.0 * count(*) FILTER (WHERE o.origem = 'base') / nullif(count(*), 0), 1)
+           AS pct_base
+FROM leitura l JOIN obra o ON o.id = l.obra_id
+WHERE l.leitor_id = :leitor;
+
+-- O4: Leituras com R5a ("Parecidos com este", meta ≥ 80 %) e R5b ("Quem leu este também
+-- gostou", meta ≥ 40 %) preenchidos, pelas execuções ativas de cada tipo.
+SELECT count(*) AS leituras,
+       round(100.0 * count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM vizinho v JOIN execucao_modelo e ON e.id = v.execucao_id
+           WHERE v.obra_id = l.obra_id AND e.ativa AND e.tipo = 'conteudo'
+       )) / nullif(count(*), 0), 1) AS pct_r5a,
+       round(100.0 * count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM vizinho v JOIN execucao_modelo e ON e.id = v.execucao_id
+           WHERE v.obra_id = l.obra_id AND e.ativa AND e.tipo = 'coleitura'
+       )) / nullif(count(*), 0), 1) AS pct_r5b
+FROM leitura l
+WHERE l.leitor_id = :leitor;

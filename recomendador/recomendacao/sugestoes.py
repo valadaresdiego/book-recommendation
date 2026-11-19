@@ -1,6 +1,8 @@
 """'Para você' (R4, SPEC §8.5): uma consulta SQL sobre as execuções ativas.
 
-A soma das parcelas é multiplicada por (1 + popularidade)^β (ADR 0006).
+A similaridade de cada execução é dividida pela escala dela (`parametros.escala`, a média
+dos seus Vizinhos) antes da mistura por α (ADR 0007), e a soma das parcelas é multiplicada
+por (1 + popularidade)^β (ADR 0006).
 
 A conta é a mesma de `recomendacao.pontuacao` (a da avaliação offline, §9); um teste
 confere as duas.
@@ -53,7 +55,8 @@ _CONSULTA = text(
     parcelas AS (
         SELECT v.vizinho_id AS candidata, r.obra_id AS motivo, r.nota, r.peso,
                r.peso * sum(
-                   CASE WHEN e.tipo = 'conteudo' THEN :alfa ELSE 1 - :alfa END * v.similaridade
+                   CASE WHEN e.tipo = 'conteudo' THEN :alfa ELSE 1 - :alfa END
+                   * v.similaridade / coalesce((e.parametros ->> 'escala')::float8, 1)
                ) AS parcela
         FROM leituras r
         JOIN vizinho v ON v.obra_id = r.obra_id

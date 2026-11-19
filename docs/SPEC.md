@@ -195,10 +195,10 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 | `mapear-generos` | §6.3 | Sim |
 | `calcular-conteudo --modelo X` | §8.2. Cria uma execução de conteúdo **inativa**: Vizinhos em `vizinho`, embeddings em `data/embeddings/conteudo-<id>.npz`. | Cria uma execução nova |
 | `bakeoff` | §8.4. `calcular-conteudo` de cada finalista, teste entre idiomas, tempo de uma Obra e `avaliar` de todos. Não ativa nada. | Cria execuções novas |
-| `calcular-coleitura` | §8.1. Cria uma execução de coleitura **inativa**. | Cria uma execução nova |
-| `avaliar <execucao_id>…` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. | Sim |
+| `calcular-coleitura [--k 20 --lambda 10 --min-coleitores 5]` | §8.1. Cria uma execução de coleitura **inativa**. | Cria uma execução nova |
+| `avaliar <execucao_id>… [--sem-varredura]` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. Com uma execução de conteúdo e uma de coleitura, avalia também as duas juntas e faz a varredura do §9.4 (grade completa em `reports/varredura-AAAA-MM-DD.csv`). | Sim |
 | `ativar <execucao_id> [--forcar]` | Torna a execução ativa e desativa a anterior do mesmo tipo, se passar no critério do §9.4. Numa de conteúdo, copia os embeddings dela para `obra.embedding`. | Sim |
-| `recalcular` | `calcular-conteudo` + `calcular-coleitura` + `avaliar` + `ativar` (só se passar no critério do §9.4) | n/a |
+| `recalcular [--modelo X] [--sem-conteudo]` | `calcular-conteudo` (com o modelo da execução ativa) + `calcular-coleitura` + `avaliar` das novas junto com as ativas + `ativar` de cada nova que passar no critério do §9.4. `--sem-conteudo` pula o passo da GPU. | n/a |
 | `atualizar` | Rotina de abertura do app (§10) | Sim |
 
 ### 6.1 Carga do goodbooks-10k
@@ -344,14 +344,17 @@ Calculada sobre `data/raw/notas.parquet` (na avaliação, só sobre o conjunto d
 
 ```
 R[u,i]   = nota − média_do_leitor_u    (só nas Notas que existem; matriz esparsa 53 mil × 10 mil)
-num[i,j] = Σ_u R[u,i]·R[u,j]                       → Rᵀ R na GPU (10k × 10k denso, fp32 ≈ 400 MB)
+num[i,j] = Σ_u R[u,i]·R[u,j]                       → Rᵀ R esparso, no CPU, por blocos de 1.000 Obras
 n[i,j]   = nº de leitores que deram Nota a i e a j → Bᵀ B, B binária
 sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
 ```
 
 - As normas usam todos os leitores de cada Obra (aproximação usual).
-- `λ` inicial = 50 (encolhimento para pares com poucos coleitores). Pares com `n[i,j] < 5` são zerados.
-- Por Obra, guarda os **K = 50** maiores `sim > 0`.
+- O produto roda no CPU (scipy, float64): com as 6 milhões de Notas leva ~14 s, e a GPU não ganha nada (medido em 19/11/2026: 2,5 s no CPU contra 1,9 s na GPU, em fp32).
+- **λ = 10** (encolhimento para pares com poucos coleitores). Pares com `n[i,j] < 5` são zerados.
+- Por Obra, guarda os **K = 20** maiores `sim > 0`.
+- K e λ foram calibrados no §9.4 (ADR 0007). O ponto de partida era K = 50 e λ = 50, e a diferença no NDCG@20 ficou abaixo de 3 %.
+- `parametros.escala` guarda a média das similaridades dos Vizinhos gravados, que a mistura do §8.5 usa.
 - ALS (`implicit`, GPU) é o candidato alternativo. A similaridade vem do cosseno entre vetores de item, e a saída tem o mesmo formato (`vizinho`). Ele só entra se ganhar na avaliação (§9).
 
 ### 8.2 Similaridade de conteúdo (embeddings)
@@ -425,8 +428,9 @@ peso(nota):  5 → +1,0 · 4 → +0,6 · 3 → 0 · 2 → −0,5 · 1 → −1,0
 
 para cada Leitura r com Nota e peso ≠ 0:
   para cada Vizinho c de r (conteúdo e coleitura, execuções ativas):
-    parcela(c, r) = peso(nota_r) × [ α·sim_conteudo(r→c) + (1−α)·sim_coleitura(r→c) ]
-                    (similaridade ausente = 0)
+    parcela(c, r) = peso(nota_r) × [ α·sim_conteudo(r→c)/escala_conteudo
+                                     + (1−α)·sim_coleitura(r→c)/escala_coleitura ]
+                    (similaridade ausente = 0; escala = parametros.escala da execução, ADR 0007)
 
 soma(c)      = Σ_r parcela(c, r)
 pontuacao(c) = soma(c) × (1 + popularidade(c))^β                     (ADR 0006)
@@ -435,8 +439,9 @@ ordem        = pontuacao desc, depois popularidade desc
 Motivo(c)    = o r com maior parcela(c, r) > 0
 ```
 
-- **α** fica em config: fase 2 = 1,0; fase 3 = calibrado na avaliação, com 0,5 de ponto de partida.
-- **β** (peso da popularidade) fica em config: 0,25 desde o bake-off (ADR 0006). O fator é positivo, então não muda quem é candidata (soma > 0), a exclusão da Estante nem o Motivo: só a ordem.
+- **Escala:** cada execução divide as suas similaridades pela média delas (`execucao_modelo.parametros.escala`) antes da mistura. Sem isso, o conteúdo (~0,55 de média com o Qwen3-4B) engole a Coleitura (~0,07) em qualquer α razoável (ADR 0007). Execução sem escala vale 1.
+- **α** fica em config: 1,0 na fase 2 e **0,25** desde a calibração da fase 3 (ADR 0007).
+- **β** (peso da popularidade) fica em config: 0,25 no bake-off (ADR 0006) e **0** desde a fase 3 (ADR 0007). O fator é positivo, então não muda quem é candidata (soma > 0), a exclusão da Estante nem o Motivo: só a ordem.
 - Como a "Obra" é a unidade (ADR 0001), excluir a Estante já exclui todas as Edições e traduções (critério do R4).
 - O Motivo nunca é uma Leitura com Nota ≤ 3, porque o peso dessas é ≤ 0 e a parcela não pode ser positiva. A consulta também só aceita Motivo de peso > 0, para o caso raro de similaridade negativa. O texto é "Porque você deu {nota} a *{titulo_exibicao}*".
 - **Menos de 3 Leituras com Nota:** não calcula. Mostra "Avalie pelo menos 3 livros para receber sugestões" e um contador "{n} de 3", com um link para a Montagem da Estante.
@@ -466,8 +471,11 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 
 ### 9.4 Calibração e critério de entrada
 
-- Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, β ∈ {0; 0,25; 0,5; 1} (o `avaliar` já grava esta em `metricas.varredura_beta`), K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e uma mais simétrica). O resultado vai para `reports/avaliacao-*.md`.
+- Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, β ∈ {0; 0,25; 0,5; 1} (cada execução isolada grava a de β em `metricas.varredura_beta`), K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e a simétrica, 5 → 1 · 4 → 0,5 · 3 → 0 · 2 → −0,5 · 1 → −1). O resultado vai para `reports/avaliacao-*.md` e a grade completa para `reports/varredura-*.csv`.
+- K e λ variam só a coleitura, que a avaliação recalcula sobre o treino a cada configuração. O conteúdo usa os Vizinhos gravados da execução (K = 50); com α = 1, K e λ não se aplicam.
+- A combinação (α de `config`) fica em `metricas.combinada` das duas execuções, com a melhor configuração da varredura em `combinada.melhor`.
 - **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual.
+- **Resultado (19/11/2026, ADR 0007):** escalas igualadas, α = 0,25, β = 0, K = 20, λ = 10 e a tabela de pesos do PRD. NDCG@20 combinado 0,3176, contra 0,3117 da Coleitura sozinha, 0,0650 do conteúdo sozinho e 0,0828 da popularidade.
 - O UCSD Goodreads é validação extra opcional e manual, só local (licença: ADR 0003). Ele não entra no `recalcular`.
 
 ---
