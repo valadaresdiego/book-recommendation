@@ -123,39 +123,55 @@ def test_remover_uma_leitura_devolve_a_obra_as_candidatas(conexao, catalogo) -> 
     assert obras[3] in {s.obra_id for s in para_voce(conexao, LEITOR_ID).sugestoes}
 
 
-def test_sql_igual_a_pontuacao_da_avaliacao(conexao, catalogo) -> None:
-    """A consulta do 'Para você' e `recomendacao.pontuacao` (usada no §9) dão o mesmo."""
+def test_sql_igual_a_pontuacao_da_avaliacao(conexao, catalogo, monkeypatch) -> None:
+    """A consulta do 'Para você' e `recomendacao.pontuacao` (usada no §9) dão o mesmo, com
+    conteúdo e Coleitura misturados por α, cada um dividido pela sua escala (ADR 0007), e o
+    peso da popularidade (ADR 0006)."""
+    monkeypatch.setattr(config(), "alfa", 0.25)
+    monkeypatch.setattr(config(), "beta_popularidade", 0.25)
     obras = catalogo["obras"]
+    coleitura = _execucao(conexao, "coleitura", True)
+    linhas = [
+        {"e": coleitura, "o": o, "v": obras[(n + d) % len(obras)], "s": 0.05 * d, "p": d}
+        for n, o in enumerate(obras)
+        for d in (1, 2, 3)
+    ]
+    conexao.execute(text("INSERT INTO vizinho VALUES (:e, :o, :v, :s, :p)"), linhas)
+    for e, valor in ((catalogo["ativa"], 0.6), (coleitura, 0.1)):
+        conexao.execute(
+            text("UPDATE execucao_modelo SET parametros = CAST(:p AS jsonb) WHERE id = :e"),
+            {"p": f'{{"escala": {valor}}}', "e": e},
+        )
     estante = {obras[0]: 5, obras[11]: 4, obras[13]: 1, obras[25]: 2, obras[31]: 5}
     for o, nota in estante.items():
         _ler(conexao, o, nota)
 
     r = para_voce(conexao, LEITOR_ID, limite=40)
 
+    def triplas(execucao: int) -> list:
+        return conexao.execute(
+            text("SELECT obra_id, vizinho_id, similaridade FROM vizinho WHERE execucao_id = :e"),
+            {"e": execucao},
+        ).all()
+
     indice = {o: i for i, o in enumerate(obras)}
-    triplas = conexao.execute(
-        text("SELECT obra_id, vizinho_id, similaridade FROM vizinho WHERE execucao_id = :e"),
-        {"e": catalogo["ativa"]},
-    ).all()
     popularidade = np.array(
         [
             conexao.execute(text("SELECT popularidade FROM obra WHERE id = :o"), {"o": o}).scalar()
             for o in obras
         ]
     )
-    beta = config().beta_popularidade
-    assert beta > 0  # a paridade vale com o peso da popularidade (ADR 0006)
-    p = pontuar(
-        matriz_de_pesos([estante], indice),
-        matriz_de_similaridade({"conteudo": triplas}, indice, alfa=1.0),
-        popularidade,
-        beta,
-    )[0]
+    s = matriz_de_similaridade(
+        {"conteudo": triplas(catalogo["ativa"]), "coleitura": triplas(coleitura)},
+        indice,
+        alfa=0.25,
+        escalas={"conteudo": 0.6, "coleitura": 0.1},
+    )
+    p = pontuar(matriz_de_pesos([estante], indice), s, popularidade, 0.25)[0]
     esperado = {o: float(p[i]) for o, i in indice.items() if p[i] > 0 and o not in estante}
     assert {s.obra_id: s.pontuacao for s in r.sugestoes} == pytest.approx(esperado, abs=1e-5)
     melhor = max(esperado, key=esperado.get)
     assert r.sugestoes[0].obra_id == melhor
-    assert np.isclose(r.sugestoes[0].pontuacao, esperado[melhor], atol=1e-5)
 
 
 # --- página da Obra ---

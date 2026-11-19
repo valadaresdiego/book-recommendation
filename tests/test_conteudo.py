@@ -191,6 +191,23 @@ def test_ativar_recusa_execucao_pior_que_a_ativa(
     ativar(conexao, nova, tmp_path, forcar=True)
 
 
+def test_ativar_recusa_comparar_divisoes_diferentes(
+    conexao: Connection, catalogo: dict[str, int], tmp_path
+) -> None:
+    """SPEC §9.4: o NDCG@20 só é comparado com a mesma divisão e a mesma configuração."""
+    ativa = calcular_conteudo(conexao, CodificadorDePalavras(), tmp_path, k=2).execucao_id
+    nova = calcular_conteudo(conexao, CodificadorDePalavras(), tmp_path, k=2).execucao_id
+    for execucao, leitores in ((ativa, 5000), (nova, 50)):
+        conexao.execute(
+            text("UPDATE execucao_modelo SET metricas = :m WHERE id = :e"),
+            {"m": f'{{"ndcg@20": 0.2, "divisao": {{"leitores": {leitores}}}}}', "e": execucao},
+        )
+    ativar(conexao, ativa, tmp_path)
+
+    with pytest.raises(AtivacaoRecusada, match="divisao"):
+        ativar(conexao, nova, tmp_path)
+
+
 def test_ativar_sem_metricas_exige_forcar(
     conexao: Connection, catalogo: dict[str, int], tmp_path
 ) -> None:

@@ -4,6 +4,8 @@ O bake-off do SPEC §8.4 escolheu o **`Qwen/Qwen3-Embedding-4B`** (Apache 2.0), 
 
 O bake-off também mudou a pontuação de "Para você": a soma do §8.5 passa a ser multiplicada por **(1 + popularidade)^β**, com β = 0,25 na `config`. Sem esse peso, nenhum modelo de conteúdo vencia o baseline de popularidade, que é o critério da Fase 2.
 
+> **19/11/2026:** com a Coleitura, a calibração da fase 3 levou β para 0 ([ADR 0007](0007-calibracao-da-mistura.md)). O fator continua na fórmula.
+
 ## Números
 
 Avaliação offline do §9: 5.000 leitores do goodbooks-10k, semente 42, 20 % das Notas ≥ 4 de cada um como teste. Relatório completo em `reports/avaliacao-2026-11-18.md`.

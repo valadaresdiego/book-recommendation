@@ -16,7 +16,9 @@ import numpy as np
 from sqlalchemy import Connection, text
 
 from recomendador.catalogo.texto import normalizar
+from recomendador.pipeline.execucoes import copiar_vizinhos
 from recomendador.recomendacao.embeddings import Codificador
+from recomendador.recomendacao.pontuacao import escala
 from recomendador.recomendacao.texto import carregar_dados, texto_da_obra
 
 log = logging.getLogger(__name__)
@@ -98,7 +100,12 @@ def calcular_conteudo(
     autores = [normalizar(dados[i].autores[0]) or None if dados[i].autores else None for i in ids]
     vizinhos = top_vizinhos(e, autores, k, max_mesmo_autor)
 
-    parametros = {"k": k, "max_mesmo_autor": max_mesmo_autor, "dimensao": int(e.shape[1])}
+    parametros = {
+        "k": k,
+        "max_mesmo_autor": max_mesmo_autor,
+        "dimensao": int(e.shape[1]),
+        "escala": escala(s for lista in vizinhos for _, s in lista),
+    }
     execucao_id = conn.execute(
         text(
             "INSERT INTO execucao_modelo (tipo, modelo, parametros) "
@@ -111,7 +118,7 @@ def calcular_conteudo(
         for i, lista in enumerate(vizinhos)
         for posicao, (j, sim) in enumerate(lista, 1)
     ]
-    _copiar_vizinhos(conn, linhas)
+    copiar_vizinhos(conn, linhas)
 
     pasta.mkdir(parents=True, exist_ok=True)
     np.savez(
@@ -121,13 +128,3 @@ def calcular_conteudo(
     )
     log.info("Execução %d: %d Vizinhos de %d Obras (inativa)", execucao_id, len(linhas), len(ids))
     return ResumoConteudo(execucao_id, len(ids), len(linhas), segundos)
-
-
-def _copiar_vizinhos(conn: Connection, linhas: list[tuple]) -> None:
-    """COPY na mesma transação: 500 mil linhas em segundos."""
-    cursor = conn.connection.driver_connection.cursor()
-    with cursor.copy(
-        "COPY vizinho (execucao_id, obra_id, vizinho_id, similaridade, posicao) FROM STDIN"
-    ) as copia:
-        for linha in linhas:
-            copia.write_row(linha)

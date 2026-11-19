@@ -33,11 +33,6 @@ def _configurar_log() -> None:
     log.setLevel(logging.INFO)
 
 
-def _pendente(fase: str) -> None:
-    typer.echo(f"Ainda não implementado ({fase}). Ver docs/SPEC.md.", err=True)
-    raise typer.Exit(code=2)
-
-
 def _engine():
     from recomendador.db.sessao import criar_engine
 
@@ -205,26 +200,74 @@ def bakeoff(
     typer.echo(f"Relatório em {resultado.relatorio}")
 
 
+def _arquivo_de_notas() -> Path:
+    from recomendador.config import config
+
+    return config().data_dir / "raw" / "notas.parquet"
+
+
 @app.command("calcular-coleitura")
-def calcular_coleitura() -> None:
+def calcular_coleitura(
+    k: Annotated[int, typer.Option(help="Vizinhos guardados por Obra.")] = 20,
+    lam: Annotated[
+        float, typer.Option("--lambda", help="Encolhimento para pares com poucos coleitores.")
+    ] = 10,
+    min_coleitores: Annotated[
+        int, typer.Option(help="Pares com menos coleitores que isto são zerados.")
+    ] = 5,
+) -> None:
     """Calcula os Vizinhos de Coleitura numa execução inativa (SPEC §8.1)."""
-    _pendente("fase 3")
+    from recomendador.pipeline.avaliacao import carregar_notas
+    from recomendador.pipeline.coleitura import calcular_coleitura as calcular
+
+    with _engine().begin() as conn:
+        notas = carregar_notas(conn, _arquivo_de_notas())
+        r = calcular(conn, notas, k, lam, min_coleitores)
+    typer.echo(f"Execução {r.execucao_id} criada (inativa): {r.obras} Obras, {r.vizinhos} Vizinhos")
 
 
 @app.command("avaliar")
 def avaliar(
     execucoes: Annotated[list[int], typer.Argument(help="Ids das execuções a avaliar.")],
     leitores: Annotated[int, typer.Option(help="Leitores da amostra (SPEC §9.1).")] = 5000,
+    varredura: Annotated[
+        bool, typer.Option(help="Com uma execução de cada tipo, varre α × β × K × λ (§9.4).")
+    ] = True,
 ) -> None:
-    """Avaliação offline: Recall@20, NDCG@20 e cobertura (SPEC §9)."""
-    from recomendador.config import config
+    """Avaliação offline: Recall@20, NDCG@20 e cobertura (SPEC §9).
+
+    Com exatamente uma execução de conteúdo e uma de Coleitura, avalia também as duas
+    juntas e faz a varredura da calibração.
+    """
     from recomendador.pipeline.avaliacao import avaliar as avaliar_execucoes
     from recomendador.pipeline.avaliacao import carregar_notas, dividir
 
     with _engine().begin() as conn:
-        notas = carregar_notas(conn, config().data_dir / "raw" / "notas.parquet")
+        tipos = dict(
+            conn.execute(
+                text("SELECT id, tipo::text FROM execucao_modelo WHERE id = ANY(:e)"),
+                {"e": list(execucoes)},
+            ).all()
+        )
+        if faltam := set(execucoes) - set(tipos):
+            raise typer.BadParameter(f"execuções inexistentes: {sorted(faltam)}")
+        por_tipo = {t: [e for e in execucoes if tipos[e] == t] for t in ("conteudo", "coleitura")}
+        combinar = (
+            (por_tipo["conteudo"][0], por_tipo["coleitura"][0])
+            if all(len(v) == 1 for v in por_tipo.values())
+            else None
+        )
+        notas = carregar_notas(conn, _arquivo_de_notas())
         divisao = dividir(notas, n_leitores=leitores)
-        r = avaliar_execucoes(conn, execucoes, divisao, Path("reports"))
+        r = avaliar_execucoes(
+            conn,
+            execucoes,
+            divisao,
+            Path("reports"),
+            notas=notas,
+            combinar=combinar,
+            varredura=varredura,
+        )
     typer.echo(f"Relatório em {r.relatorio}")
 
 
@@ -248,9 +291,68 @@ def ativar(
 
 
 @app.command("recalcular")
-def recalcular() -> None:
-    """Recálculo completo, com avaliação e ativação condicional."""
-    _pendente("fase 3")
+def recalcular(
+    modelo: Annotated[
+        str | None, typer.Option(help="Modelo de conteúdo. Padrão: o da execução ativa.")
+    ] = None,
+    sem_conteudo: Annotated[
+        bool, typer.Option(help="Não recalcula o conteúdo (o que leva mais tempo, na GPU).")
+    ] = False,
+    leitores: Annotated[int, typer.Option(help="Leitores da avaliação (SPEC §9.1).")] = 5000,
+) -> None:
+    """Recálculo completo (SPEC §6): `calcular-conteudo` + `calcular-coleitura` + `avaliar`
+    + `ativar` das execuções novas que passarem no critério do §9.4.
+
+    As execuções ativas são avaliadas de novo junto com as novas, com a mesma divisão.
+    """
+    from recomendador.pipeline.avaliacao import avaliar as avaliar_execucoes
+    from recomendador.pipeline.avaliacao import carregar_notas, dividir
+    from recomendador.pipeline.coleitura import calcular_coleitura as calcular_col
+    from recomendador.pipeline.execucoes import AtivacaoRecusada
+    from recomendador.pipeline.execucoes import ativar as ativar_execucao
+
+    with _engine().begin() as conn:
+        ativas = dict(
+            conn.execute(text("SELECT tipo::text, id FROM execucao_modelo WHERE ativa")).all()
+        )
+        if modelo is None and "conteudo" in ativas:
+            modelo = conn.execute(
+                text("SELECT modelo FROM execucao_modelo WHERE id = :e"),
+                {"e": ativas["conteudo"]},
+            ).scalar_one()
+    novas: dict[str, int] = {}
+    if not sem_conteudo:
+        if modelo is None:
+            raise typer.BadParameter("não há execução de conteúdo ativa", param_hint="--modelo")
+        from recomendador.pipeline.conteudo import calcular_conteudo as calcular
+        from recomendador.recomendacao.embeddings import ModeloSentenceTransformers
+
+        cod = ModeloSentenceTransformers(modelo)
+        with _engine().begin() as conn:
+            novas["conteudo"] = calcular(conn, cod, _pasta_embeddings()).execucao_id
+        cod.liberar()
+    with _engine().begin() as conn:
+        notas = carregar_notas(conn, _arquivo_de_notas())
+        novas["coleitura"] = calcular_col(conn, notas).execucao_id
+
+    conteudo = novas.get("conteudo", ativas.get("conteudo"))
+    with _engine().begin() as conn:
+        r = avaliar_execucoes(
+            conn,
+            sorted({*ativas.values(), *novas.values()}),
+            dividir(notas, n_leitores=leitores),
+            Path("reports"),
+            notas=notas,
+            combinar=(conteudo, novas["coleitura"]) if conteudo else None,
+        )
+    typer.echo(f"Relatório em {r.relatorio}")
+    for tipo, execucao in novas.items():
+        try:
+            with _engine().begin() as conn:
+                ativar_execucao(conn, execucao, _pasta_embeddings())
+            typer.echo(f"Execução {execucao} ({tipo}) ativada")
+        except AtivacaoRecusada as e:
+            typer.echo(f"Execução {execucao} ({tipo}) não ativada: {e}")
 
 
 @app.command("atualizar")
