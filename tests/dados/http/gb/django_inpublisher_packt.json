@@ -1,0 +1,510 @@
+{
+  "items": [
+    {
+      "id": "Y6h3EAAAQBAJ",
+      "volumeInfo": {
+        "title": "Becoming an Enterprise Django Developer",
+        "subtitle": "Discover best practices, tooling, and solutions for writing and organizing Django applications in production",
+        "authors": [
+          "Michael Dinder"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2022-06-27",
+        "description": "A Python web developer's guide to exploring the Django 4 development lifecycle - beyond the basics Key Features Expert tips to help you use the right packages, tools, and libraries and understand their scope for your project Gain a thorough understanding of the essential components that comprise a large-scale Python web app Learn best practices for creating a project structure for better performance Book DescriptionDjango is a powerful framework but choosing the right add-ons that match the scale and scope of your enterprise projects can be tricky. This book will help you explore the multifarious options available for enterprise Django development. Countless organizations are already using Django and more migrating to it, unleashing the power of Python with many different packages and dependencies, including AI technologies. This practical guide will help you understand practices, blueprints, and design decisions to put Django to work the way you want it to. You’ll learn various ways in which data can be rendered onto a page and discover the power of Django for large-scale production applications. Starting with the basics of getting an enterprise project up and running, you'll get to grips with maintaining the project throughout its lifecycle while learning what the Django application lifecycle is. By the end of this book, you'll have learned how to build and deploy a Django project to the web and implement various components into the site.What you will learn Use Django to develop enterprise-level apps to help scale your business Understand the steps and tools used to scale up a proof-of-concept project to production without going too deep into specific technologies Explore core Django components and how to use them in different ways to suit your app s needs Find out how Django allows you to build RESTful APIs Extract, parse, and migrate data from an old database system to a new system with Django and Python Write and run a test using the built-in testing tools in Django Who this book is for This book is for Django developers who want to learn the full-stack enterprise app development lifecycle. If you are a Python web developer looking to learn how to maintain a production website and explore Django beyond the basics, this book is for you. The book assumes intermediate-level knowledge of Python programming and the Django framework.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781801070942"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1801070946"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=Y6h3EAAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=Y6h3EAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "x7AyzwEACAAJ",
+      "volumeInfo": {
+        "title": "Django 4 by Example",
+        "subtitle": "Build Powerful and Reliable Python Web Applications from Scratch",
+        "authors": [
+          "Antonio Mele"
+        ],
+        "publisher": "Packt Publishing",
+        "publishedDate": "2022-08-29",
+        "description": "Learn to create fully functional web applications with authentication, content management systems, payment processing, RESTful APIs, and more Key Features: Implement advanced functionalities, such as full-text search engines, user activity streams, payment gateways, and recommendation engines Integrate JavaScript, PostgreSQL, Redis, Celery, and Memcached into your applications Add real-time features with Django Channels and WebSockets Book Description: Django 4 By Example is the 4th edition of the best-selling franchise that helps you build web apps. This book will walk you through the creation of real-world applications, solving common problems, and implementing best practices using a step-by-step approach. You'll cover a wide range of web app development topics as you build four different apps: A blog application: Create data models, views, and URLs and implement an admin site for your blog. Create sitemaps and RSS feeds and implement a full-text search engine with PostgreSQL. A social website: Implement authentication with Facebook, Twitter, and Google. Create user profiles, image thumbnails, a bookmarklet, and an activity stream. Implement a user follower system and add infinite scroll pagination to your website. An e-commerce application: Build a product catalog, a shopping cart, and asynchronous tasks with Celery and RabbitMQ. Process payments with Stripe and manage payment notifications via webhooks. Build a product recommendation engine with Redis. Create PDF invoices and export orders to CSV. An e-learning platform: Create a content management system to manage polymorphic content. Cache content with Memcached and Redis. Build and consume a RESTful API. Implement a real-time chat using WebSockets with ASGI. Create a production environment using NGINX, uWSGI and Daphne with Docker Compose. This is a practical book that will have you creating web apps quickly. What You Will Learn: Learn Django essentials, including models, ORM, views, templates, URLs, forms, authentication, signals and middleware Implement different modules of the Django framework to solve specific problems Integrate third-party Django applications into your project Build asynchronous (ASGI) applications with Django Set up a production environment for your projects Easily create complex web applications to solve real use cases Who this book is for: This book is for readers with basic Python knowledge and programmers transitioning from other web frameworks who wish to learn Django by doing. If you already use Django or have in the past, and want to learn best practices and integrate other technologies to scale your applications, then this book is for you too. This book will help you master the most relevant areas of the framework by building practical projects from scratch. Some previous knowledge of HTML and JavaScript is assumed.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1801813051"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781801813051"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=x7AyzwEACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=x7AyzwEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "_9wlzgEACAAJ",
+      "volumeInfo": {
+        "title": "Django by Example",
+        "authors": [
+          "Antonio Melé"
+        ],
+        "publishedDate": "2016",
+        "description": "\"Django is a powerful Python web framework designed to develop web applications quickly, from simple prototypes to large-scale projects. Django encourages clean, pragmatic design, and provides developers with a comprehensive set of tools to build scalable web applications. This video will walk you through the creation of four professional Django projects, teaching you how to solve common problems and implement best practices ... You will learn how to build a search engine and implement a user activity stream. Furthermore, you will create a recommendation engine, an e-commerce coupon system, and a content management system. The video will also teach you how to enhance your applications with AJAX, create RESTful APIs, and setup a production environment for your Django projects. After going through this video, you will have a good understanding of how Django works and how to integrate it with other technologies to build practical, advanced web applications.\"--Resource description page.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1787283666"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781787283664"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "ZznPsgEACAAJ",
+      "volumeInfo": {
+        "title": "Learning Django Web Development",
+        "authors": [
+          "Ratan Kumar",
+          "Sanjeev Jaiswal"
+        ],
+        "publishedDate": "2015-06-19",
+        "description": "This book is for web developers who want to get started with Django for web development. Basic knowledge of Python programming is required but no knowledge of Django is expected.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1783984406"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781783984404"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=ZznPsgEACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=ZznPsgEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "IHxeDwAAQBAJ",
+      "volumeInfo": {
+        "title": "Django 2 by Example",
+        "subtitle": "Build powerful and reliable Python web applications from scratch",
+        "authors": [
+          "Antonio Melé"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2018-05-31",
+        "description": "Learn Django 2.0 with four end-to-end projects Key Features Learn Django 2 by building real-world web applications from scratch Develop powerful web applications quickly using the best coding practices Integrate other technologies into your application with clear, step-by-step explanations and comprehensive example code Book DescriptionIf you want to learn the entire process of developing professional web applications with Django 2, then this book is for you. You will walk through the creation of four professional Django 2 projects, teaching you how to solve common problems and implement best practices. You will learn how to build a blog application, a social image bookmarking website, an online shop and an e-learning platform. The book will teach you how to enhance your applications with AJAX, create RESTful APIs and set up a production environment for your Django 2 projects. The book walks you through the creation of real-world applications, solving common problems, and implementing best practices. By the end of this book, you will have a deep understanding of Django 2 and how to build advanced web applications.What you will learn Build practical real-world web applications with Django 2 Use Django 2 with other technologies such as Redis and Celery Develop pluggable Django 2 applications Create advanced features, optimize your code, and use the cache framework Add internationalization to your Django 2 projects Enhance the user experience using JavaScript and AJAX Add social features to your projects Build RESTful APIs for your applications Who this book is for If you are a web developer who wants to see how to build professional sites with Django 2, this book is for. You will need a basic knowledge of Python, HTML, and JavaScript, but you don't need to have worked with Django before.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781788472005"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1788472004"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=IHxeDwAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=IHxeDwAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "04QhjwEACAAJ",
+      "volumeInfo": {
+        "title": "Web Development with Django Cookbook - Second Edition",
+        "authors": [
+          "Aidas Bendoraitis"
+        ],
+        "publisher": "Packt Publishing",
+        "publishedDate": "2016",
+        "description": "If you have created websites with Django, but you want to sharpen your knowledge and learn some good approaches for how to treat different aspects of web development, you should definitely read this book. It is intended for intermediate and professional Django users who need to build projects which must be multilingual, functional on devices of different screen sizes, and which scale over time.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1785886770"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781785886775"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=04QhjwEACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=04QhjwEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "PltYzQEACAAJ",
+      "volumeInfo": {
+        "title": "Django 3 Web Development Cookbook",
+        "subtitle": "Fourth Edition",
+        "authors": [
+          "Aidas Bendoraitis",
+          "Jake Kronika"
+        ],
+        "publishedDate": "2020-03-23",
+        "description": "Practical recipes for building fast, robust, and secure web apps using Django 3 and Python Key Features Explore the latest version of Django, and learn effectively with the help of practical examples Follow a task-based approach to develop professional web apps using Django and Python Learn to deploy, scale, and secure apps using Docker and Amazon Web Services(AWS) Book Description Django is a web framework for perfectionists with deadlines, designed to help you build manageable medium and large web projects in a short time span. This fourth edition of Django Web Development Cookbook is updated with Django 3's latest features to guide you effectively through the development process. This Django book starts by helping you create a virtual environment and project structure for building Python web apps. You'll learn how to build models, views, forms, and templates for your web apps and then integrate JavaScript in your Django apps to add more features. As you advance, you'll create responsive multilingual websites, ready to be shared on social networks. The book will take you through uploading and processing images, rendering data in HTML5, PDF, and Excel, using and creating APIs, and navigating different data types in Django. You'll become well-versed in security best practices and caching techniques to enhance your website's security and speed. This edition not only helps you work with the PostgreSQL database but also the MySQL database. You'll also discover advanced recipes for using Django with Docker and Ansible in development, staging, and production environments. By the end of this book, you will have become proficient in using Django's powerful features and will be equipped to create robust websites. What you will learn Discover how to set the basic configurations to start any Django project Understand full-stack web application development using Django Build a database structure using reusable model mixins Implement security, performance, and deployment features in your web apps Import data from local sources and external web services and export it to your app Secure web applications against malicious usage and find and fix common performance bottlenecks Who this book is for This Django book is for Python web developers who want to build fast and secure web apps that can scale over time. You'll also find this book useful if you want to upgrade to the latest Django framework. Knowledge of Python 3, along with a basic understanding of the Django framework will help you make the most of this book.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1838987428"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781838987428"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=PltYzQEACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=PltYzQEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "yHAgzgEACAAJ",
+      "volumeInfo": {
+        "title": "Python Django Web Development",
+        "subtitle": "To-Do App",
+        "authors": [
+          "John Elder"
+        ],
+        "publishedDate": "2019",
+        "description": "Learn Database Driven Web Development with Django and Python! About This Video Use the Sublime editor to build a Django app from scratch with the help of practical examples Learn basic CSS with Bootstrap 4.1 In Detail Django and Python may seem challenging at first, but with the right guidance, you can gain the confidence to work with them effectively. In this course, you'll learn through a step-by-step manner, quickly and easily, and also be able to create professional looking websites, even if you have no programming or web design experience. You'll watch and learn as the instructor demonstrates how to build a cool to-do list app. You can follow the instructions and even build your own version of the app. After building the web app, you can make lists and even save them to a database. You can then update the list as you complete the tasks by crossing them off the list. The course will also help you focus on styling the website using the popular Bootstrap CSS framework. By the end of this course, you'll have a strong understanding of Django and the skills to use it for building interactive web apps. Downloading the example code for this course: You can download the example code files for this course on GitHub at the following link: https://github.com/PacktPublishing/Python-Django-Web-Development-To-Do-App/ . If you require support please email: customercare@packt.com.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1838981683"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781838981686"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "cuh1DwAAQBAJ",
+      "volumeInfo": {
+        "title": "Django 2 Web Development Cookbook",
+        "subtitle": "100 practical recipes on building scalable Python web apps with Django 2",
+        "authors": [
+          "Jake Kronika",
+          "Aidas Bendoraitis"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2018-10-31",
+        "description": "Create unbelievably fast, robust and secure web apps with Django Web Framework and Python 3.6 Key Features Discover solutions to a variety of web application scenarios, leveraging the power of the Django framework Understand URL routing, models, forms, templates, and RESTful services with Django 2.14 Test, deploy, and scale your web applications efficiently with Amazon Web Services Book DescriptionDjango is a framework designed to balance rapid web development with high performance. It handles high levels of user traffic and interaction, integrates with a variety of databases, and collects and processes data in real time. This book follows a task-based approach to guide you through developing with the Django 2.1 framework, starting with setting up and configuring Docker containers and a virtual environment for your project. You'll learn how to write reusable pieces of code for your models and manage database changes. You'll work with forms and views to enter and list data, applying practical examples using templates and JavaScript together for the optimum user experience. This cookbook helps you to adjust the built-in Django administration to fit your needs and sharpen security and performance to make your web applications as robust, scalable, and dependable as possible. You'll also explore integration with Django CMS, the popular content management suite. In the final chapters, you'll learn programming and debugging tricks and discover how collecting data from different sources and providing it to others in various formats can be a breeze. By the end of the book, you'll learn how to test and deploy projects to a remote dedicated server and scale your application to meet user demands. What you will learn Get started with the basic configuration necessary to start any Django project Build a database structure out of reusable model mixins Secure web applications against malicious usage and address common performance bottlenecks Integrate with, and extend, the Django CMS Construct and manage complex and deep hierarchies Import data from local sources and external web services and export it to third parties Who this book is for This book is designed for Python developers working on fast and secure web apps that can scale over time. You’ll also find this book useful if you want to upgrade to latest Django framework. A background in Python 3 along with basic knowledge of the Django framework will be useful.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781788838085"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1788838084"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=cuh1DwAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=cuh1DwAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "oVEGwgEACAAJ",
+      "volumeInfo": {
+        "title": "Learning Website Development with Django",
+        "subtitle": "A Beginner's Tutorial to Building Web Applications, Quickly and Cleanly, with the Django Application Framework",
+        "authors": [
+          "Ayman Hourieh"
+        ],
+        "description": "Annotation Being a beginner's guide this book has a very simple and clear approach. It is a practical guide that will help you learn the features of Django and help you build a dynamic website using those features. This book is for web developers who want to see how to build a complete site with Web 2.0 features, using the power of a proven and popular development system, but do not necessarily want to learn how a complete framework functions in order to do this. Basic knowledge of Python development is required for this book, but no knowledge of Django is expected.",
+        "industryIdentifiers": [
+          {
+            "type": "OTHER",
+            "identifier": "OCLC:1062860893"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "vKjWDQAAQBAJ",
+      "volumeInfo": {
+        "title": "Django: Web Development with Python",
+        "authors": [
+          "Samuel Dauzon",
+          "Aidas Bendoraitis",
+          "Arun Ravindran"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2016-08-31",
+        "description": "From an idea to a prototype – a complete guide for web development with the Django framework About This Book Explore the best practices to develop applications of a superior quality with Django framework Unravel the common problems of web development in Django This course teaches you major Django functions and will help you improve your skills by developing models, forms, views, and templates Experience the challenges of working on an end-to-end social network project Who This Book Is For Web developers who want to use modern Python-based web frameworks like Django to build powerful web applications. The course is mostly self-contained and introduces web development with Python to a reader who is familiar with web development concepts and can help him become an expert in this trade. It's intended for all levels of web developers, both students and practitioners from novice to experts. What You Will Learn Use Django models to store information in the database and generate queries to access a database across models Quickly develop web pages to create, read, update, and delete data from the model using class-based views Generate very maintainable forms with Django Import data from local sources and external web services as well as exporting your data to third parties Deep dive into various aspects of Django from models and views to testing and deployment Familiarize yourself with the various nuances of web development such as browser attacks and databases In Detail Data science is hot right now, and the need for multitalented developers is greater than ever before. A basic grounding in building apps with a framework as minimalistic, powerful, and easy-to-learn as Django will be a useful skill to launch your career as an entrepreneur or web developer. Django is a web framework that was designed to strike a balance between rapid web development and high performance. This course will take you on a journey to become an efficient web developer thoroughly understanding the key concepts of Django framework. This learning path is divided into three modules. The course begins with basic concepts of the Django framework. The first module, Django Essentials, is like a practical guide, filled with many real-world examples to build highly effective Django web application. After getting familiar with core concepts of Django, it's time to practice your learning from the first module with the help of over 90 recipes available in this module. In the second module, Web Development with Django Cookbook, you'll learn varying complexities to help you create multilingual, responsive, and scalable websites with Django. By the end of this module, you will have a good understanding of the new features added to Django 1.8 and be an expert at web development processes.The next step is to discover the latest best practices and idioms in this rapidly evolving Django framework. This is what you'll be learning in our third module, Django Design Patterns and Best Practices. This module will teach you common design patterns to develop better Django code. By the end of the module, you will be able to leverage the Django framework to develop a fully functional web application with minimal effort. Style and approach This course includes all the resources that will help you jump into the web development field with Django and learn how to make scalable and robust web applications. The aim is to create a smooth learning path that will teach you how to get started with the powerful Django framework and perform various web development techniques in depth. Through this comprehensive course, you'll learn web development with Django from scratch to finish!",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781787123922"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1787123928"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=vKjWDQAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=vKjWDQAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "HEG8EAAAQBAJ",
+      "volumeInfo": {
+        "title": "Web Development with Django",
+        "subtitle": "A definitive guide to building modern Python web applications using Django 4",
+        "authors": [
+          "Ben Shaw",
+          "Saurabh Badhwar",
+          "Chris Guest",
+          "Bharath Chandra K S"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2023-05-26",
+        "description": "Create your own websites easily, securely, and quickly with Django by tackling practical activities based on realistic case studies Key Features Understand Django functionality and the Model-View-Template (MVT) paradigm Create and iteratively build a book review website, adding features as you build your knowledge Explore advanced concepts such as REST API implementation and third-party module integration Book DescriptionDo you want to develop reliable and secure applications that stand out from the crowd without spending hours on boilerplate code? You’ve made the right choice trusting the Django framework, and this book will tell you why. Often referred to as a “batteries included” web development framework, Django comes with all the core features needed to build a standalone application. Web Development with Django will take you through all the essential concepts and help you explore its power to build real-world applications using Python. Throughout the book, you’ll get the grips with the major features of Django by building a website called Bookr – a repository for book reviews. This end-to-end case study is split into a series of bitesize projects presented as exercises and activities, allowing you to challenge yourself in an enjoyable and attainable way. As you advance, you'll acquire various practical skills, including how to serve static files to add CSS, JavaScript, and images to your application, how to implement forms to accept user input, and how to manage sessions to ensure a reliable user experience. You’ll cover everyday tasks that are part of the development cycle of a real-world web application. By the end of this Django book, you'll have the skills and confidence to creatively develop and deploy your own projects.What you will learn Create a new application and add models to describe your data Use views and templates to control behavior and appearance Implement access control through authentication and permissions Develop practical web forms to add features such as file uploads Build a RESTful API and JavaScript code that communicates with it Connect to a database such as PostgreSQL Who this book is for This book is for programmers looking to enhance their web development skills using the Django framework. To fully understand the concepts explained in this book, basic knowledge of Python programming as well as familiarity with JavaScript, HTML, and CSS is assumed.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781803235127"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1803235128"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=HEG8EAAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=HEG8EAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "NZ5HswEACAAJ",
+      "volumeInfo": {
+        "title": "Django 1",
+        "subtitle": "A Practical Guide to Django Template Development with Custom Tags, Filters, Multiple Templates, Caching, and More",
+        "authors": [
+          "Scott Newman"
+        ],
+        "publishedDate": "2008",
+        "industryIdentifiers": [
+          {
+            "type": "OTHER",
+            "identifier": "OCLC:740883632"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "U7A10gEACAAJ",
+      "volumeInfo": {
+        "title": "Django Essentials",
+        "subtitle": "Develop Simple Web Applications with the Powerful Django Framework",
+        "authors": [
+          "Samuel Dauzon"
+        ],
+        "publishedDate": "2014",
+        "industryIdentifiers": [
+          {
+            "type": "OTHER",
+            "identifier": "OCLC:1604821360"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "B66pSQAACAAJ",
+      "volumeInfo": {
+        "title": "Django 1. 2 E-commerce",
+        "subtitle": "Build Powerful E-commerce Applications Using Django, a Leading Python Web Framework",
+        "authors": [
+          "Jesse Legg"
+        ],
+        "publisher": "Packt Publishing",
+        "publishedDate": "2010",
+        "description": "Packed with code examples and configuration hints for related web technologies, the book helps you add a new feature to your store in each chapter. It also provides additional documentation and comments for popular web APIs. If you are a Django developer and wish to build an e-commerce application, then this book is for you. You need to be familiar with the basics of developing in Django.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1847197000"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781847197009"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=B66pSQAACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=B66pSQAACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "JtshzgEACAAJ",
+      "volumeInfo": {
+        "title": "Mastering Django Part 1 - AJAX, Class Based Views, Forms",
+        "authors": [
+          "Nick Walter"
+        ],
+        "publishedDate": "2019",
+        "description": "Master your skills as a Django developer by learning advanced techniques. About This Video You only need to know the basics of Django. Nick speaks with clarity, and explained a lot of things clearly. The project is good enough to learn Django quickly and can actually be implemented in real-life settings. In Detail Welcome to the Mastering Django Series! Learn time saving and advanced techniques to come to a better developer. To get a better idea of what we'll be creating, go watch the promo video for the course. While creating this site, you will learn the following 8 skills: Pipenv - Learn why this tool is so much better than pip and virtualenv separately Pre-made Authentication Views - Get your site up and running quickly with these awesome built-in views Class-Based Views - When working with models, these views can't be beaten. HUGE time savers Django Forms - Rather than creating painstaking HTML forms, let Django handle the heavy work Using other site's APIs - Learn to connect with the YouTube API for data AJAX - I've had so many requests to cover this. Learn how to fetch data without reloading the page Seed Data - Learn how to create a starting point for any database Heroku Deployment - Heroku makes deploying your project simple and fast. I'll show you how It's time to up your Django skills. See you inside! Downloading the example code for this course: You can download the example code files for this course on GitHub at the following link: https://github.com/PacktPublishing/Mastering-Django-Part-1--AJAX-Class-Based-Views-Forms . If you require support please email: customercare@packt.com.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1838987754"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781838987756"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "mWG1AAAAQBAJ",
+      "volumeInfo": {
+        "title": "Django 1.1 Testing and Debugging",
+        "subtitle": "Building rigorously tested and bug-free Django applications",
+        "authors": [
+          "Karen Tracey"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2010-04-19",
+        "description": "Building rigorously tested and bug-free Django applications Key Features Develop Django applications quickly with fewer bugs through effective use of automated testing and debugging tools. Ensure your code is accurate and stable throughout development and production by using Django's test framework. Understand the working of code and its generated output with the help of debugging tools. Packed with detailed working examples that illustrate the techniques and tools for debugging Book DescriptionBugs are a time consuming burden during software development. Django's built-in test framework and debugging support help lessen this burden. This book will teach you quick and efficient techniques for using Django and Python tools to eradicate bugs and ensure your Django application works correctly. This book will walk you step by step through development of a complete sample Django application. You will learn how best to test and debug models, views, URL configuration, templates, and template tags. This book will help you integrate with and make use of the rich external environment of test and debugging tools for Python and Django applications. The book starts with a basic overview of testing. It will highlight areas to look out for while testing. You will learn about different kinds of tests available, and the pros and cons of each, and also details of test extensions provided by Django that simplify the task of testing Django applications. You will see an illustration of how external tools that provide even more sophisticated testing features can be integrated into Django's framework. On the debugging front, the book illustrates how to interpret the extensive debugging information provided by Django's debug error pages, and how to utilize logging and other external tools to learn what code is doing.What you will learn Build a complete application in manageable pieces that can be written, tested, and debugged individually. Come to grips with the nuances of testing and the pros and cons of each type of test Simplify the task of testing web applications by using specific test extensions provided by Django. Integrate other test tools into Django s framework to obtain test coverage information and more easily test forms. Analyze the copious debug information provided by Django s debug error pages. Write your own add-on debugging aids. Easily acquire enormous and important information with the help of external tools such as the Django debug toolbar. Decipher code behavior by using logging and effectively debug problems in production, when debug error pages are not available.Learn what your code and other library support code actually does by skilled use of a debugger. Tackle problems external to your code with available fixes. Debug common problems that arise during the move from development to production. Who this book is for If you are a Django application developer who wants to create robust applications quickly that work well and are easy to maintain in the long term, this book is for you. This book is the right pick if you want to be smartly tutored to make best use of Django's rich testing and debugging support and make testing an effortless task.Basic knowledge of Python, Django, and the overall structure of a database-driven web application is assumed. However, the code samples are fully explained so that even beginners who are new to the area can learn a great deal from this book.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781847197573"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1847197574"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=mWG1AAAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=mWG1AAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "TJ5MzQEACAAJ",
+      "volumeInfo": {
+        "title": "Web Development with Django Cookbook",
+        "authors": [
+          "Aidas Bendoraitis"
+        ],
+        "publishedDate": "2014",
+        "description": "Over 70 practical recipes to create multilingual, responsive, and scalable websites with Django In Detail Django is easy to learn and solves all types of web development problems and questions, providing Python developers an easy solution to web-application development. With a wealth of third-party modules available, you'll be able to create a highly customizable web application with this powerful framework. Web Development with Django Cookbook will guide you through all web development processes with the Django framework. You will get started with the virtual environment and configuration of the project, and then you will learn how to define a database structure with reusable components. Find out how to tweak the administration to make the website editors happy. This book deals with some important third-party modules necessary for fully equipped web development. What You Will Learn Configure your Django project the right way Build a database structure out of reusable model mixins Manage hierarchical structures with MPTT Play nicely with JavaScript in responsive templates Create handy template filters and tags that you can reuse in every project Master the configuration of contributed administration Extend Django CMS with your own functionality.",
+        "industryIdentifiers": [
+          {
+            "type": "OTHER",
+            "identifier": "OCLC:1137165350"
+          }
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "WzW9BwAAQBAJ",
+      "volumeInfo": {
+        "title": "Django Design Patterns and Best Practices",
+        "subtitle": "Easily build maintainable websites with powerful and relevant Django design patterns",
+        "authors": [
+          "Arun Ravindran"
+        ],
+        "publisher": "Packt Publishing Ltd",
+        "publishedDate": "2015-03-31",
+        "description": "Key Features Book DescriptionIf you want to learn how best to utilize commonly found patterns and learn best practices in developing applications with Django, this is the book for you. This book, like Django itself, is accessible to amateur and professional developers alike and assumes little in the way of prior experience. Although written for Python 3, the majority of the code in this book works in Python 2 or can be easily translated.What you will learn Understand common design patterns that can help you write better Django code Discover the latest best practices and idioms in this rapidly evolving framework Deep dive into various aspects of Django from Models and Views to testing and deployment Get to grips with difficult topics such as dealing with legacy code and debugging Familiarize yourself with the various nuances of web development such as browser attacks and databases Reduce the maintenance burden with welltested, cleaner code Show your work to the world by learning about hosting, deploying, and securing your Django projects Who this book is for If you want to learn how best to utilize commonly found patterns and learn best practices in developing applications with Django, this is the book for you. This book, like Django itself, is accessible to amateur and professional developers alike and assumes little in the way of prior experience.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9781783986651"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "1783986654"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=WzW9BwAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=WzW9BwAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "en"
+      }
+    },
+    {
+      "id": "imyXtAEACAAJ",
+      "volumeInfo": {
+        "title": "Building Django 2. 0 Web Applications",
+        "subtitle": "Create Enterprise-Grade, Scalable Python Web Applications Easily with Django 2. 0",
+        "authors": [
+          "Tom Aratyn"
+        ],
+        "publisher": "Packt Publishing",
+        "publishedDate": "2018-04-27",
+        "description": "Go from the initial idea to a production-deployed web app using Django 2.0. Key Features A beginners guide to learning python's most popular framework, Django Build fully featured web projects in Django 2.0 through examples. Deploy web applications in quick and reliable fashion with Docker Book Description This project-based guide will give you a sound understanding of Django 2.0 through three full-featured applications. It starts off by building a basic IMDB clone and adding users who can register, vote on their favorite movies, and upload associated pictures. You will learn how to use the votes that your users have cast to build a list of the top 10 movies. This book will also take you through deploying your app into a production environment using Docker containers hosted on the server in Amazon's Electric Computing Cloud (EC2). Next, you're going to build a Stack Overflow clone wherein registered users can ask and answer questions. You will learn how to enable a user asking a question to accept answers and mark them as useful. You will also learn how to add search functionality to help users find questions by using ElasticSearch. You'll discover ways to apply the principles of 12 factor apps while deploying Django on the most popular web server, Apache, with mod_wsgi. Lastly, you'll build a clone of MailChimp so users can send and create emails, and deploy it using AWS. Get set to take your basic Python skills to the next level with this comprehensive guide! What you will learn 1. Build new projects from scratch using Django 2.0 2. Provide full-text searching using ElasticSearch and Django 2.0 3. Learn Django 2.0 security best practices and how they're applied 4. Deploy a full Django 2.0 app almost anywhere with mod_wsgi 5. Deploy a full Django 2.0 app to AWS's PaaS Elastic Beanstalk 6. Deploy a full Django 2.0 app with Docker 7. Deploy a full Django 2.0 app with NGINX and uWSGI Who this book is for If you have some basic knowledge of HTML, CSS, and Python and want to build fully-featured and secure applications using Django, then this book is for you.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "1787286215"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9781787286214"
+          }
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=imyXtAEACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=imyXtAEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "en"
+      }
+    }
+  ]
+}

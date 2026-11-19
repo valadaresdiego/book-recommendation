@@ -49,6 +49,16 @@ def test_q_do_google_books() -> None:
     assert montar_q("1984") == "1984"  # 4 dígitos não é ISBN
 
 
+def test_q_com_filtro_de_editora() -> None:
+    assert montar_q("editora:packt django") == "django inpublisher:packt"
+    assert montar_q("django  Editora: packt") == "django inpublisher:packt"
+    assert montar_q('editora:"alta books" python') == 'python inpublisher:"alta books"'
+    assert montar_q("python editora:“O'Reilly Media”") == 'python inpublisher:"O\'Reilly Media"'
+    assert montar_q("editora:novatec") == "inpublisher:novatec"
+    assert montar_q('editora:"" duna') == "duna"  # filtro vazio é ignorado
+    assert montar_q("editoras de livros") == "editoras de livros"  # sem os dois-pontos, é texto
+
+
 def test_acha_por_titulo_e_autor_misturados(conexao: Connection, catalogo: dict) -> None:
     busca = buscar(conexao, "duna herbert", google=None)
 
@@ -137,3 +147,25 @@ def test_edicao_em_outro_idioma_nao_troca_o_item_do_catalogo(conexao: Connection
     dos_filhos = [r for r in resultados if r.obra_id == filhos]
     assert [r.titulo for r in dos_filhos] == ["Filhos de Duna"]
     assert all(r.titulo != "Hijos de Dune" for r in resultados)
+
+
+def test_busca_por_editora_vai_so_ao_google_e_ainda_funde(conexao: Connection) -> None:
+    """O Catálogo não sabe a editora: "Django" do Catálogo não entra só por casar com o texto.
+    A Edição da Packt cujo ISBN está no Catálogo continua fundida à Obra."""
+    criar_obra(conexao, "Django", ("Alguém Qualquer",), popularidade=50_000)
+    django4 = criar_obra(
+        conexao, "Django 4 by Example", ("Antonio Melé",), isbns=("9781801813051",)
+    )
+
+    busca = buscar(conexao, "editora:packt django", google=_google())
+
+    assert not busca.google_indisponivel
+    # A Obra fundida vem primeiro, como os itens do Catálogo; depois, o resto do Google.
+    assert [r.obra_id for r in busca.resultados if r.obra_id is not None] == [django4]
+    assert busca.resultados[0].obra_id == django4
+    assert busca.resultados[1].titulo == "Becoming an Enterprise Django Developer"
+
+
+def test_so_o_filtro_de_editora_sem_google_nao_acha_nada(conexao: Connection) -> None:
+    criar_obra(conexao, "Packt", ("Alguém Qualquer",))
+    assert buscar(conexao, "editora:packt", google=None).resultados == []

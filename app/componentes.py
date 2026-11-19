@@ -64,7 +64,10 @@ def busca_e_adicionar(prefixo: str) -> None:
     with st.form(estado.chave("form"), border=False, clear_on_submit=False):
         campo, botao = st.columns([5, 1], vertical_alignment="bottom")
         texto = campo.text_input(
-            "Título, autor ou ISBN", placeholder="ex.: duna herbert", key=estado.chave("campo")
+            "Título, autor ou ISBN",
+            placeholder="ex.: duna herbert",
+            help='Para buscar por editora: editora:packt django, ou editora:"alta books" python',
+            key=estado.chave("campo"),
         )
         buscar = botao.form_submit_button("Buscar", use_container_width=True, type="primary")
     if buscar and texto.strip():

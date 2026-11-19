@@ -14,5 +14,7 @@ a chave da API do Google não aparece em nenhum arquivo.
   - `duna_herbert.json`: não traz a *Duna* da Aleph entre os 20 primeiros, mas traz *Messias de Duna*.
   - `isbn_9788576573135.json`: a *Duna* da Aleph.
   - `torto_arado.json`: a edição portuguesa (LeYa), que a Open Library não conhece (404).
+  - `django_inpublisher_packt.json` (gravado em 19/11/2026): a busca `editora:packt django`; traz
+    *Django 4 by Example* (ISBN 9781801813051).
 
 Para gravar de novo, use o mesmo `q` e salve só o corpo da resposta.

@@ -10,6 +10,7 @@ import httpx
 
 from recomendador.catalogo.fontes import FonteIndisponivel
 from recomendador.catalogo.isbn import normalizar_isbn, parece_isbn
+from recomendador.catalogo.texto import separar_editora
 from recomendador.catalogo.tipos import ResultadoBusca
 
 URL = "https://www.googleapis.com/books/v1/volumes"
@@ -23,11 +24,16 @@ _RE_ANO = re.compile(r"^(\d{4})")
 
 
 def montar_q(texto: str) -> str:
-    """ISBN de 10 ou 13 dígitos (com ou sem hífens) vira `isbn:…`; o resto vai como texto."""
+    """ISBN de 10 ou 13 dígitos (com ou sem hífens) vira `isbn:…`; `editora:x` vira
+    `inpublisher:x`; o resto vai como texto."""
     texto = " ".join(texto.split())
-    if parece_isbn(texto):
-        return "isbn:" + re.sub(r"[\s\-]", "", texto).upper()
-    return texto
+    livre, editora = separar_editora(texto)
+    if editora:
+        filtro = f'inpublisher:"{editora}"' if " " in editora else f"inpublisher:{editora}"
+        return f"{livre} {filtro}".strip()
+    if parece_isbn(livre):
+        return "isbn:" + re.sub(r"[\s\-]", "", livre).upper()
+    return livre
 
 
 def _capa(volume: dict) -> str | None:
@@ -71,9 +77,10 @@ class GoogleBooks:
         api_key: str,
         *,
         transporte: httpx.BaseTransport | None = None,
-        timeout: float = 1.8,
+        timeout: float = 4.0,
     ) -> None:
-        # O timeout fica abaixo de 2 s para a busca inteira caber na meta de p95 (SPEC §7.1).
+        # Em 19/11/2026, buscas de livros técnicos levaram de 1,8 a 2,3 s: com 1,8 s o app
+        # desistia delas. A meta de 2 s vale para o Catálogo; o Google Books tem até 4 s (§7.1).
         self._chave = api_key
         self._http = httpx.Client(timeout=timeout, transport=transporte)
 
