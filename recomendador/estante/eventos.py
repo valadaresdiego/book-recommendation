@@ -12,12 +12,13 @@ TIPOS_DE_EVENTO = frozenset(
         "leitura_salva",  # {origem, duracao_s, com_nota}: O3
         "nota_alterada",  # {de, para}
         "leitura_removida",  # {nota}
-        "sugestao_exibida",  # {posicao, pontuacao, motivo_obra_id, execucoes}: O2
+        # `lista` (geral ou tecnologia, §8.8) nos três eventos do O2 que vêm de "Para você".
+        "sugestao_exibida",  # {posicao, pontuacao, motivo_obra_id, execucoes, lista}: O2
         "sugestao_aberta",  # {posicao}: O2
         "ja_li_de_sugestao",  # {posicao, nota}: O5
         "montagem_pulada",  # {}: o Leitor clicou em "Pular" na Montagem da Estante
-        "sugestao_dispensada",  # {posicao}: O2 (R7)
-        "quero_ler_salvo",  # {posicao}: O2 (R8)
+        "sugestao_dispensada",  # {posicao, lista}: O2 (R7)
+        "quero_ler_salvo",  # {posicao, lista}: O2 (R8)
         "leitura_iniciada",  # {posicao}: R13 ("Comecei a ler")
     }
 )

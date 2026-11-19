@@ -24,11 +24,15 @@ Uma Obra do Catálogo parecida com a Edição escolhida, oferecida ao Leitor na 
 _Evite_: sugestão (é outro conceito), opção
 
 **Gênero**:
-Uma categoria de uma lista fixa e curada (cerca de 15), à qual cada Obra pode pertencer. Não confundir com as tags livres herdadas da Base de coleitura.
+Uma categoria de uma lista fixa e curada (cerca de 20), à qual cada Obra pode pertencer. Não confundir com as tags livres herdadas da Base de coleitura.
 _Evite_: categoria, tag, assunto
 
+**Obra técnica**:
+Uma Obra do Gênero "Tecnologia": desenvolvimento de software, dados, arquitetura, UX, DevOps ou gestão de times de tecnologia. Biografias e história da tecnologia não contam. Pode vir da Base de coleitura ou da Open Library, e as que vêm da Open Library não têm Coleitura.
+_Evite_: livro técnico (fora da UI), livro de TI
+
 **Catálogo**:
-O conjunto fechado de Obras que o app conhece e pode sugerir: as Obras da Base de coleitura e as Obras das Estantes.
+O conjunto fechado de Obras que o app conhece e pode sugerir: as Obras da Base de coleitura, as Obras técnicas trazidas da Open Library e as Obras das Estantes.
 _Evite_: acervo, base de livros
 
 ## Leitor
@@ -86,6 +90,10 @@ _Evite_: similar, relacionado
 **Sugestão**:
 Uma Obra do Catálogo, fora da Estante, recomendada ao Leitor com uma pontuação e um Motivo.
 _Evite_: recomendação (para o item), candidato (depois de pontuado)
+
+**Sugestão técnica**:
+Uma Sugestão de Obra técnica, pontuada só pela Similaridade de conteúdo e mostrada na aba "Tecnologia" de "Para você", separada das outras Sugestões.
+_Evite_: recomendação técnica, sugestão de TI
 
 **Contribuinte**:
 Uma Leitura de Nota alta que somou pontos a uma Sugestão, com a sua participação: a fração que ela deu da soma das parcelas positivas.

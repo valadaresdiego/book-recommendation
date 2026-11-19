@@ -25,6 +25,7 @@ from recomendador.recomendacao.sugestoes import (
     ParaVoce,
     Sugestao,
     para_voce,
+    para_voce_tecnologia,
 )
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "modelo_de_conteudo_ativo",
     "pagina_da_obra",
     "para_voce",
+    "para_voce_tecnologia",
     "pendente",
     "transacao",
 ]

@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Connection, text
 
-from recomendador.catalogo.generos import ARQUIVO_GENEROS, ler_generos, sincronizar_generos
+from recomendador.catalogo.generos import (
+    ARQUIVO_GENEROS,
+    SLUG_TECNOLOGIA,
+    ler_generos,
+    sincronizar_generos,
+)
 from recomendador.pipeline.generos import mapear_generos
 
 
@@ -25,16 +30,17 @@ def _generos(conexao: Connection) -> dict[str, set[str]]:
     return resultado
 
 
-def test_yaml_do_projeto_tem_18_generos() -> None:
+def test_yaml_do_projeto_tem_19_generos() -> None:
     generos = ler_generos()
-    assert len(generos) == 18
+    assert len(generos) == 19
+    assert generos[-1].slug == SLUG_TECNOLOGIA
     assert all(g.tags for g in generos)
 
 
 def test_sincronizar_reflete_o_yaml(conexao: Connection, tmp_path: Path) -> None:
     sincronizar_generos(conexao, ARQUIVO_GENEROS)
     sincronizar_generos(conexao, ARQUIVO_GENEROS)  # idempotente
-    assert len(_generos(conexao)) == 18
+    assert len(_generos(conexao)) == 19
 
     menor = _yaml(
         tmp_path,
@@ -55,12 +61,13 @@ def test_slug_repetido_e_recusado(tmp_path: Path) -> None:
         ler_generos(caminho)
 
 
-def _obra_com_tags(conexao: Connection, tags: dict[str, int]) -> int:
+def _obra_com_tags(conexao: Connection, tags: dict[str, int], origem: str = "base") -> int:
     obra_id = conexao.execute(
         text(
-            "INSERT INTO obra (titulo, titulo_exibicao, origem) VALUES ('x', 'x', 'base') "
+            "INSERT INTO obra (titulo, titulo_exibicao, origem) VALUES ('x', 'x', :origem) "
             "RETURNING id"
-        )
+        ),
+        {"origem": origem},
     ).scalar_one()
     conexao.execute(
         text("INSERT INTO obra_tag VALUES (:o, :t, :c)"),
@@ -116,3 +123,36 @@ def test_obra_sem_tags_fica_sem_genero(conexao: Connection) -> None:
 
     assert _forcas(conexao, obra_id) == {}
     assert resumo.obras_com_genero == 0
+
+
+def test_tecnologia_nao_fica_com_as_biografias(conexao: Connection) -> None:
+    """*Ghost in the Wires*: as tags de programação não fazem da autobiografia uma Obra técnica."""
+    sincronizar_generos(conexao)
+    tecnica = _obra_com_tags(conexao, {"programming": 600, "software": 100, "fiction": 300})
+    memorias = _obra_com_tags(conexao, {"computers": 100, "memoir": 400, "nonfiction": 500})
+
+    mapear_generos(conexao)
+
+    assert SLUG_TECNOLOGIA in _forcas(conexao, tecnica)
+    assert set(_forcas(conexao, memorias)) == {"biografias"}
+
+
+def test_mapear_mantem_a_tecnologia_das_obras_da_open_library(conexao: Connection) -> None:
+    """As Obras técnicas dos dumps ganham o Gênero no `carregar-tecnicas`, com força 1; os
+    assuntos delas têm contagem 0 e não refariam a linha (SPEC §6.3, §8.8)."""
+    sincronizar_generos(conexao)
+    da_ol = _obra_com_tags(conexao, {"computer programming": 0}, origem="open_library")
+    do_leitor = _obra_com_tags(conexao, {"python (computer program language)": 0}, "leitor")
+    for obra_id in (da_ol, do_leitor):
+        conexao.execute(
+            text(
+                "INSERT INTO obra_genero (obra_id, genero_id, forca) "
+                "SELECT :o, id, 1 FROM genero WHERE slug = :s"
+            ),
+            {"o": obra_id, "s": SLUG_TECNOLOGIA},
+        )
+
+    mapear_generos(conexao)
+
+    assert _forcas(conexao, da_ol) == {SLUG_TECNOLOGIA: 1.0}
+    assert _forcas(conexao, do_leitor) == {SLUG_TECNOLOGIA: 1.0}

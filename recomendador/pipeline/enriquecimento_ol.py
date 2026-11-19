@@ -509,7 +509,13 @@ def _gravar(
 ) -> None:
     # Limpa o que veio de uma execução anterior, para o resultado depender só do dump atual.
     conn.execute(text("UPDATE obra SET ol_work_key = NULL WHERE origem = 'base'"))
-    conn.execute(text("DELETE FROM obra_isbn WHERE origem = 'open_library'"))
+    # Os ISBNs das Obras técnicas (`origem='open_library'`) são do `carregar-tecnicas` (§8.8).
+    conn.execute(
+        text(
+            "DELETE FROM obra_isbn i USING obra o WHERE o.id = i.obra_id "
+            "AND i.origem = 'open_library' AND o.origem <> 'open_library'"
+        )
+    )
     if descricao_velha:
         conn.execute(
             text("UPDATE obra SET descricao = NULL WHERE id = :o AND descricao = :d"),

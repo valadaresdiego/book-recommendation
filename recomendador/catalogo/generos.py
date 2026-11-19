@@ -10,6 +10,10 @@ from sqlalchemy.dialects.postgresql import insert
 from recomendador.db.modelos import Genero, GeneroTag
 
 ARQUIVO_GENEROS = Path(__file__).with_name("generos.yaml")
+# O Gênero das Obras técnicas (SPEC §8.8): define a aba "Tecnologia" de "Para você".
+SLUG_TECNOLOGIA = "tecnologia"
+# Uma Obra deste Gênero não é técnica, mesmo com tags de programação (*Ghost in the Wires*).
+SLUG_BIOGRAFIAS = "biografias"
 
 
 @dataclass(frozen=True)

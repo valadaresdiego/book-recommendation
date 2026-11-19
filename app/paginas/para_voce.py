@@ -2,7 +2,9 @@
 
 Fase 4 (§8.6): filtros por Gênero e por Edição em português (R10), "Por quê?" com os
 Contribuintes (R11), "Quero ler" (R8) e "Não tenho interesse" (R7). Fase 5 (§8.7):
-"Comecei a ler" (R13).
+"Comecei a ler" (R13). Fase 6 (§8.8): o seletor "Para você" / "Tecnologia" (R14). Ele
+desenha só a lista escolhida: com `st.tabs`, as duas seriam desenhadas a cada abertura e o
+`sugestao_exibida` contaria a que o Leitor não viu.
 """
 
 import streamlit as st
@@ -24,9 +26,15 @@ from recomendador import catalogo, estante, recomendacao
 COLUNAS = 4
 
 
+GERAL, TECNOLOGIA = "geral", "tecnologia"
+ROTULOS = {GERAL: "Para você", TECNOLOGIA: "Tecnologia"}
+
+
 @st.cache_data(ttl=30, show_spinner=False)
-def _para_voce(generos: tuple[str, ...], so_edicao_pt: bool) -> recomendacao.ParaVoce:
+def _para_voce(lista: str, generos: tuple[str, ...], so_edicao_pt: bool) -> recomendacao.ParaVoce:
     with recomendacao.transacao() as conn:
+        if lista == TECNOLOGIA:
+            return recomendacao.para_voce_tecnologia(conn, LEITOR, so_edicao_pt=so_edicao_pt)
         return recomendacao.para_voce(conn, LEITOR, generos=generos, so_edicao_pt=so_edicao_pt)
 
 
@@ -38,7 +46,7 @@ def _generos() -> dict[str, str]:
 
 def _registrar_exibicao(r: recomendacao.ParaVoce, filtros: tuple) -> None:
     """`sugestao_exibida`, uma vez por item a cada abertura da lista (O2). Mudar um filtro
-    conta como nova abertura (§8.6)."""
+    ou a lista conta como nova abertura (§8.6, §8.8)."""
     rerun = st.session_state.get("pagina-anterior") == st.session_state.get("pagina-atual")
     if rerun and st.session_state.get("pv-filtros-exibidos") == filtros:
         return  # um rerun dentro da página, não uma abertura
@@ -54,21 +62,40 @@ def _registrar_exibicao(r: recomendacao.ParaVoce, filtros: tuple) -> None:
                 pontuacao=round(s.pontuacao, 4),
                 motivo_obra_id=s.motivo_obra_id,
                 execucoes=list(r.execucoes),
+                lista=filtros[0],
             )
 
 
 st.title("Para você")
 
-generos = _generos()
-escolhidos = st.pills(
-    "Gêneros",
-    list(generos),
-    format_func=generos.get,
-    selection_mode="multi",
-    key="pv-generos",
+lista = (
+    st.segmented_control(
+        "Lista",
+        list(ROTULOS),
+        format_func=ROTULOS.get,
+        default=GERAL,
+        key="pv-lista",
+        label_visibility="collapsed",
+    )
+    or GERAL  # desmarcar o botão escolhido volta para a lista geral
 )
+escolhidos: list[str] = []
+if lista == GERAL:
+    generos = _generos()
+    escolhidos = st.pills(
+        "Gêneros",
+        list(generos),
+        format_func=generos.get,
+        selection_mode="multi",
+        key="pv-generos",
+    )
+else:
+    st.caption(
+        "Livros técnicos parecidos com os que você avaliou, de qualquer gênero. "
+        "A maioria não tem edição em português."
+    )
 so_edicao_pt = st.toggle("Só com edição em português", key="pv-pt")
-filtros = (tuple(sorted(escolhidos or ())), bool(so_edicao_pt))
+filtros = (lista, tuple(sorted(escolhidos or ())), bool(so_edicao_pt))
 r = _para_voce(*filtros)
 
 if not r.suficiente:
@@ -78,8 +105,13 @@ if not r.suficiente:
     st.stop()
 
 if not r.sugestoes:
-    if filtros != ((), False):
+    if filtros[1:] != ((), False):
         st.info("Nenhuma sugestão passa nesses filtros. Tire algum para ver mais.")
+    elif lista == TECNOLOGIA:
+        st.info(
+            "Ainda não há sugestões técnicas: falta carregar as Obras técnicas "
+            "(`carregar-tecnicas` e `calcular-tecnico`)."
+        )
     else:
         st.info(
             "Ainda não há sugestões: os livros com nota alta da sua Estante não têm parecidos "
@@ -91,10 +123,12 @@ _registrar_exibicao(r, filtros)
 st.caption(f"{len(r.sugestoes)} sugestões a partir das suas {r.notas} notas.")
 
 posicoes = st.session_state.setdefault("posicao-da-sugestao", {})
+listas = st.session_state.setdefault("lista-da-sugestao", {})
 for inicio in range(0, len(r.sugestoes), COLUNAS):
     linha = enumerate(r.sugestoes[inicio : inicio + COLUNAS], inicio + 1)
     for coluna, (posicao, s) in zip(st.columns(COLUNAS), linha, strict=False):
         posicoes[s.obra_id] = posicao
+        listas[s.obra_id] = lista
         with coluna.container(border=True):
             mostrar_capa(s.capa_url, s.titulo_exibicao, s.autores, 110)
             if st.button(

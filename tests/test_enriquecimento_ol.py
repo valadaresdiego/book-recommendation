@@ -569,3 +569,29 @@ def test_work_disputada_fica_com_a_obra_de_titulo_igual() -> None:
     c = conferir_works(obras, votada, works, mesmo_titulo, edicoes)
 
     assert c.work_por_obra == {1: "hamlet"}
+
+
+def test_obras_tecnicas_ficam_com_a_work_e_os_isbns(
+    conexao: Connection, dumps: Path, obras: dict[str, int]
+) -> None:
+    """As works das Obras técnicas estão ocupadas, como as do Leitor, e os ISBNs delas são
+    do `carregar-tecnicas` (SPEC §8.8): o `enriquecer-ol` não mexe em nenhum dos dois."""
+    tecnica = conexao.execute(
+        text(
+            "INSERT INTO obra (titulo, titulo_exibicao, origem, ol_work_key) "
+            "VALUES ('Outra', 'Outra', 'open_library', '/works/OL9W') RETURNING id"
+        )
+    ).scalar_one()
+    isbn = completar_isbn13("978013475759")
+    _isbn(conexao, isbn, tecnica, "open_library")
+
+    enriquecer_ol(conexao, dumps)
+
+    assert _isbns(conexao, isbn) == {isbn: (tecnica, "open_library")}
+    works = dict(
+        conexao.execute(
+            text("SELECT id, ol_work_key FROM obra WHERE ol_work_key IS NOT NULL")
+        ).all()
+    )
+    assert works[tecnica] == "/works/OL9W"
+    assert list(works.values()).count("/works/OL9W") == 1

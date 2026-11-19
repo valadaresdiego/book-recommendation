@@ -228,7 +228,7 @@ def test_nao_tenho_interesse_dispensa_a_sugestao(conexao: Connection) -> None:
     dados = conexao.execute(
         text("SELECT dados FROM evento WHERE tipo = 'sugestao_dispensada'")
     ).scalar_one()
-    assert dados == {"posicao": 2}
+    assert dados == {"posicao": 2, "lista": "geral"}
 
 
 def test_filtro_de_genero_e_motivo_detalhado(conexao: Connection) -> None:
@@ -335,3 +335,48 @@ def test_pagina_da_obra_em_estou_lendo(conexao: Connection) -> None:
     assert "Parei de ler" in rotulos
     assert "Quero ler" not in rotulos
     assert "Não tenho interesse" not in rotulos
+
+
+# --- fase 6: aba "Tecnologia" (SPEC §8.8) ---
+
+
+def test_aba_tecnologia_mostra_as_sugestoes_tecnicas(conexao: Connection) -> None:
+    obras = _para_voce_com_3_notas(conexao)
+    tecnicas = [
+        criar_obra(conexao, f"Tec {i}", (f"Dev {i}",), origem="open_library") for i in range(2)
+    ]
+    execucao = conexao.execute(
+        text(
+            "INSERT INTO execucao_modelo (tipo, modelo, ativa) "
+            "VALUES ('tecnico', 'teste', true) RETURNING id"
+        )
+    ).scalar_one()
+    conexao.execute(
+        text("INSERT INTO vizinho VALUES (:e, :o, :v, :s, :p)"),
+        [
+            {"e": execucao, "o": o, "v": v, "s": 0.8 - 0.1 * p, "p": p}
+            for o in obras[:3]
+            for p, v in enumerate(tecnicas, 1)
+        ],
+    )
+    at = _pagina("para_voce").run()
+    assert _titulos_em_para_voce(at) == ["**Livro 3**", "**Livro 4**", "**Livro 5**"]
+    assert [p.key for p in at.pills] == ["pv-generos"]
+
+    at.segmented_control(key="pv-lista").set_value("tecnologia").run()
+
+    assert not at.exception
+    assert not at.pills  # a aba técnica não tem os chips de Gênero
+    assert [b.label for b in at.button if b.label.startswith("**Tec")] == ["**Tec 0**", "**Tec 1**"]
+    at.button(key=f"pv-{tecnicas[1]}-dispensar").click().run()
+    exibidas = conexao.execute(
+        text(
+            "SELECT dados ->> 'lista', count(*) FROM evento "
+            "WHERE tipo = 'sugestao_exibida' GROUP BY 1 ORDER BY 1"
+        )
+    ).all()
+    assert exibidas == [("geral", 3), ("tecnologia", 2)]
+    dispensa = conexao.execute(
+        text("SELECT dados FROM evento WHERE tipo = 'sugestao_dispensada'")
+    ).scalar_one()
+    assert dispensa == {"posicao": 2, "lista": "tecnologia"}

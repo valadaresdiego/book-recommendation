@@ -10,6 +10,10 @@ confere as duas.
 Fase 4 (§8.6): as Dispensas (R7) e a lista Quero ler (R8) saem das candidatas; os filtros
 por Gênero e por Edição em português (R10) entram depois da pontuação, sem mudá-la; e cada
 Sugestão traz os 3 maiores Contribuintes (R11).
+
+Fase 6 (§8.8, ADR 0009): a aba "Tecnologia" usa a mesma consulta só com a execução
+`tecnico` (α = 1, β = 0). A lista geral usa só as de conteúdo e de Coleitura e nunca traz
+uma Obra técnica da Open Library.
 """
 
 import uuid
@@ -74,12 +78,14 @@ _CONSULTA = text(
     parcelas AS (
         SELECT v.vizinho_id AS candidata, r.obra_id AS motivo, r.nota, r.peso,
                r.peso * sum(
-                   CASE WHEN e.tipo = 'conteudo' THEN :alfa ELSE 1 - :alfa END
+                   CASE e.tipo WHEN 'conteudo' THEN :alfa WHEN 'coleitura' THEN 1 - :alfa
+                               ELSE 1 END
                    * v.similaridade / coalesce((e.parametros ->> 'escala')::float8, 1)
                ) AS parcela
         FROM leituras r
         JOIN vizinho v ON v.obra_id = r.obra_id
-        JOIN execucao_modelo e ON e.id = v.execucao_id AND e.ativa
+        JOIN execucao_modelo e
+          ON e.id = v.execucao_id AND e.ativa AND e.tipo::text = ANY(CAST(:tipos AS text[]))
         GROUP BY v.vizinho_id, r.obra_id, r.nota, r.peso
     ),
     pontos AS (
@@ -128,6 +134,7 @@ _CONSULTA = text(
           WHERE og.obra_id = p.candidata AND g.slug = ANY(CAST(:generos AS text[]))
       ))
       AND (NOT :so_edicao_pt OR o.tem_edicao_pt)
+      AND (:tecnologia OR o.origem <> 'open_library')
     ORDER BY p.pontuacao DESC, o.popularidade DESC, o.id
     LIMIT :limite
     """
@@ -151,6 +158,51 @@ def para_voce(
     Com menos Notas que `config.min_notas_para_sugerir`, não calcula (a UI pede mais Notas).
     """
     cfg = config()
+    return _sugestoes(
+        conn,
+        leitor_id,
+        limite,
+        tipos=TIPOS_DA_LISTA_GERAL,
+        beta=cfg.beta_popularidade,
+        generos=generos,
+        so_edicao_pt=so_edicao_pt,
+        tecnologia=False,
+    )
+
+
+def para_voce_tecnologia(
+    conn: Connection, leitor_id: uuid.UUID, limite: int | None = None, *, so_edicao_pt: bool = False
+) -> ParaVoce:
+    """As Sugestões técnicas (aba "Tecnologia", R14, SPEC §8.8): a consulta de `para_voce`
+    só com a execução `tecnico`, sem popularidade (β = 0) e sem filtro de Gênero. Qualquer
+    Leitura com Nota pode ser Contribuinte."""
+    return _sugestoes(
+        conn,
+        leitor_id,
+        limite,
+        tipos=("tecnico",),
+        beta=0.0,
+        generos=(),
+        so_edicao_pt=so_edicao_pt,
+        tecnologia=True,
+    )
+
+
+TIPOS_DA_LISTA_GERAL = ("conteudo", "coleitura")
+
+
+def _sugestoes(
+    conn: Connection,
+    leitor_id: uuid.UUID,
+    limite: int | None,
+    *,
+    tipos: Sequence[str],
+    beta: float,
+    generos: Sequence[str],
+    so_edicao_pt: bool,
+    tecnologia: bool,
+) -> ParaVoce:
+    cfg = config()
     notas = conn.execute(
         text("SELECT count(*) FROM leitura WHERE leitor_id = :l AND nota IS NOT NULL"),
         {"l": leitor_id},
@@ -158,7 +210,13 @@ def para_voce(
     if notas < cfg.min_notas_para_sugerir:
         return ParaVoce([], notas, cfg.min_notas_para_sugerir)
     execucoes = tuple(
-        conn.execute(text("SELECT id FROM execucao_modelo WHERE ativa ORDER BY id")).scalars()
+        conn.execute(
+            text(
+                "SELECT id FROM execucao_modelo "
+                "WHERE ativa AND tipo::text = ANY(CAST(:t AS text[])) ORDER BY id"
+            ),
+            {"t": list(tipos)},
+        ).scalars()
     )
     linhas = conn.execute(
         _CONSULTA,
@@ -166,12 +224,14 @@ def para_voce(
             "leitor": leitor_id,
             "notas": list(PESO_DA_NOTA),
             "pesos": list(PESO_DA_NOTA.values()),
+            "tipos": list(tipos),
             "alfa": cfg.alfa,
-            "beta": cfg.beta_popularidade,
+            "beta": beta,
             "limite": limite or cfg.max_sugestoes,
             "contribuintes": CONTRIBUINTES,
             "generos": list(generos),
             "so_edicao_pt": so_edicao_pt,
+            "tecnologia": tecnologia,
         },
     )
     sugestoes = [

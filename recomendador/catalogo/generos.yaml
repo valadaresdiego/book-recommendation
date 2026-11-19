@@ -54,3 +54,10 @@
 - slug: quadrinhos
   nome: Quadrinhos
   tags: [graphic-novels, comics, manga]
+# Fase 6 (SPEC §8.8, ADR 0009). Só tags estritas: `technology` e `tech` marcam livros *sobre*
+# tecnologia (Steve Jobs). Obras de Biografias e memórias saem deste Gênero (mapear-generos).
+- slug: tecnologia
+  nome: Tecnologia
+  tags: [programming, computer-science, computers, computer, software, software-development,
+         software-engineering, coding, web-design, web-development, ux, design-ux,
+         data-science, machine-learning, devops, agile, computing]

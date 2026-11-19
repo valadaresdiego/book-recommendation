@@ -39,6 +39,7 @@ class Base(DeclarativeBase):
 class OrigemObra(enum.StrEnum):
     BASE = "base"  # veio da Base de coleitura
     LEITOR = "leitor"  # adicionada pelo Leitor
+    OPEN_LIBRARY = "open_library"  # Obra técnica dos dumps da Open Library (SPEC §8.8)
 
 
 class OrigemIsbn(enum.StrEnum):
@@ -58,6 +59,7 @@ class OrigemLeitura(enum.StrEnum):
 class TipoExecucao(enum.StrEnum):
     CONTEUDO = "conteudo"
     COLEITURA = "coleitura"
+    TECNICO = "tecnico"  # Vizinhos entre as Obras técnicas, só por conteúdo (SPEC §8.8)
 
 
 def _enum(classe: type[enum.Enum], nome: str) -> Enum:
@@ -149,6 +151,10 @@ class Obra(Base):
     goodbooks_book_id: Mapped[int | None] = mapped_column(Integer, unique=True)
     ol_work_key: Mapped[str | None] = mapped_column(Text, unique=True)
     popularidade: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    # Só das Obras técnicas da Open Library (SPEC §8.8): o nº de Edições no dump, que ordena
+    # a Montagem da Estante, e se a Obra veio da lista curada.
+    edicoes_ol: Mapped[int | None] = mapped_column(Integer)
+    curada: Mapped[bool] = mapped_column(server_default=text("false"))
     # Alguma Edição em português conhecida: filtro de idioma de "Para você" (R10, SPEC §8.6).
     tem_edicao_pt: Mapped[bool] = mapped_column(server_default=text("false"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMENSAO_EMBEDDING))

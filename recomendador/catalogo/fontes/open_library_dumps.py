@@ -1,4 +1,7 @@
-"""Download dos dumps mensais da Open Library (SPEC §5): só `works` e `editions`, ~12 GB."""
+"""Download dos dumps mensais da Open Library (SPEC §5): `works`, `editions` e `authors`, ~13 GB.
+
+O `authors` dá os nomes dos autores das Obras técnicas (`carregar-tecnicas`, §8.8).
+"""
 
 import logging
 from pathlib import Path
@@ -8,6 +11,7 @@ import httpx
 URLS = {
     "editions": "https://openlibrary.org/data/ol_dump_editions_latest.txt.gz",
     "works": "https://openlibrary.org/data/ol_dump_works_latest.txt.gz",
+    "authors": "https://openlibrary.org/data/ol_dump_authors_latest.txt.gz",
 }
 
 log = logging.getLogger(__name__)

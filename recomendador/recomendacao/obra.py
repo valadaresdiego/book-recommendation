@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.generos import SLUG_TECNOLOGIA
+
 VIZINHOS_NA_PAGINA = 10
 
 
@@ -30,7 +32,7 @@ class PaginaObra:
     generos: tuple[str, ...]
     na_estante: bool
     nota: int | None
-    parecidos: list[ObraVizinha]  # R5a: Vizinhos de conteúdo
+    parecidos: list[ObraVizinha]  # R5a: Vizinhos de conteúdo (técnicos, numa Obra técnica)
     quem_leu: list[ObraVizinha]  # R5b: Vizinhos de Coleitura (vazio: a UI mostra o aviso)
     dispensada: bool = False  # R7: a página oferece "Desfazer"
     quero_ler: bool = False  # R8: está na lista Quero ler
@@ -50,7 +52,9 @@ _OBRA = text(
            EXISTS (SELECT 1 FROM quero_ler q WHERE q.leitor_id = :leitor AND q.obra_id = o.id)
                AS quero_ler,
            EXISTS (SELECT 1 FROM estou_lendo el WHERE el.leitor_id = :leitor AND el.obra_id = o.id)
-               AS estou_lendo
+               AS estou_lendo,
+           EXISTS (SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+                   WHERE og.obra_id = o.id AND g.slug = :tecnologia) AS tecnica
     FROM obra o
     LEFT JOIN leitura l ON l.obra_id = o.id AND l.leitor_id = :leitor
     WHERE o.id = :obra
@@ -74,7 +78,9 @@ _VIZINHOS = text(
 
 
 def pagina_da_obra(conn: Connection, obra_id: int, leitor_id: uuid.UUID) -> PaginaObra | None:
-    o = conn.execute(_OBRA, {"obra": obra_id, "leitor": leitor_id}).one_or_none()
+    o = conn.execute(
+        _OBRA, {"obra": obra_id, "leitor": leitor_id, "tecnologia": SLUG_TECNOLOGIA}
+    ).one_or_none()
     if o is None:
         return None
     original = o.titulo_original or (o.titulo if o.titulo != o.titulo_exibicao else None)
@@ -91,7 +97,9 @@ def pagina_da_obra(conn: Connection, obra_id: int, leitor_id: uuid.UUID) -> Pagi
         generos=tuple(o.generos),
         na_estante=o.na_estante,
         nota=o.nota,
-        parecidos=_vizinhos(conn, obra_id, leitor_id, "conteudo"),
+        # Numa Obra técnica, os Parecidos são outras Obras técnicas (§8.3, §8.8).
+        parecidos=(o.tecnica and _vizinhos(conn, obra_id, leitor_id, "tecnico"))
+        or _vizinhos(conn, obra_id, leitor_id, "conteudo"),
         quem_leu=_vizinhos(conn, obra_id, leitor_id, "coleitura"),
         dispensada=o.dispensada,
         quero_ler=o.quero_ler,

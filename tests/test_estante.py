@@ -242,3 +242,34 @@ def test_pular_fecha_a_montagem(conexao: Connection) -> None:
     assert montagem_pendente(conexao, LEITOR_ID)
     pular_montagem(conexao, LEITOR_ID)
     assert not montagem_pendente(conexao, LEITOR_ID)
+
+
+def test_grade_de_tecnologia_poe_a_base_depois_a_lista_curada_depois_as_edicoes(
+    conexao: Connection,
+) -> None:
+    """As Obras técnicas da Open Library têm popularidade 0 (SPEC §7.4, §8.8)."""
+    tecnologia = criar_genero(conexao, "tecnologia")
+    base = _obra_do_genero(conexao, "Pragmatic", tecnologia, 10_000, forca=0.6)
+    da_ol = {}
+    for titulo, edicoes, curada in [
+        ("Muitas", 40, False),
+        ("Poucas", 3, False),
+        ("Curada", 1, True),
+    ]:
+        da_ol[titulo] = criar_obra(conexao, titulo, origem="open_library")
+        conexao.execute(
+            text("UPDATE obra SET edicoes_ol = :e, curada = :c WHERE id = :o"),
+            {"e": edicoes, "c": curada, "o": da_ol[titulo]},
+        )
+        ligar_genero(conexao, da_ol[titulo], tecnologia)
+    leitor = criar_obra(conexao, "Do Leitor", origem="leitor")
+    ligar_genero(conexao, leitor, tecnologia)
+
+    grade = grade_da_montagem(conexao, LEITOR_ID, ["tecnologia"])
+
+    assert [c.obra_id for c in grade] == [
+        base,
+        da_ol["Curada"],
+        da_ol["Muitas"],
+        da_ol["Poucas"],
+    ]
