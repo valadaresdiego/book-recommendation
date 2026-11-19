@@ -327,6 +327,31 @@ def tirar_de_quero_ler(obra_id: int, titulo: str, chave: str) -> None:
     st.rerun()
 
 
+def comecei_a_ler(obra_id: int, titulo: str, chave: str) -> None:
+    """O botão "Comecei a ler" (R13): põe a Obra em Estou lendo e a tira de Quero ler."""
+    if not st.button("Comecei a ler", key=f"{chave}-lendo", icon="📖", use_container_width=True):
+        return
+    try:
+        with estante.transacao() as conn:
+            estante.salvar_estou_lendo(conn, LEITOR, obra_id, posicao_da_sugestao(obra_id))
+    except estante.JaNaEstante as e:
+        st.warning(str(e), icon="📚")
+        return
+    depois_de_gravar()
+    st.toast(f"{titulo} entrou em Estou lendo.")
+    st.rerun()
+
+
+def parei_de_ler(obra_id: int, titulo: str, chave: str) -> None:
+    if not st.button("Parei de ler", key=f"{chave}-parei", use_container_width=True):
+        return
+    with estante.transacao() as conn:
+        estante.tirar_de_estou_lendo(conn, LEITOR, obra_id)
+    depois_de_gravar()
+    st.toast(f"{titulo} saiu de Estou lendo.")
+    st.rerun()
+
+
 def dispensar(obra_id: int, titulo: str, chave: str) -> None:
     """O botão "Não tenho interesse" (R7): a Obra não volta a "Para você"."""
     if not st.button("Não tenho interesse", key=f"{chave}-dispensar", type="tertiary"):
@@ -359,9 +384,9 @@ def abrir_obra(obra_id: int, posicao: int | None = None) -> None:
 def ja_li(obra_id: int, titulo: str, chave: str) -> None:
     """O botão "Já li": abre a Nota e grava a Leitura (R1 + R2 num passo).
 
-    Uma Obra que veio de "Para você" (direto ou pela lista Quero ler) entra com
-    `origem='sugestao'` e registra `ja_li_de_sugestao` (O5); as demais, com
-    `origem='catalogo'`. `estante.adicionar` tira a Obra de Quero ler (R8).
+    Uma Obra que veio de "Para você" (direto ou pelas listas Quero ler e Estou lendo) entra
+    com `origem='sugestao'` e registra `ja_li_de_sugestao` (O5); as demais, com
+    `origem='catalogo'`. `estante.adicionar` tira a Obra das duas listas (R8, R13).
     """
     with st.popover("Já li", use_container_width=True, key=f"{chave}-pop"):
         estrelas = st.feedback("stars", key=f"{chave}-nota")

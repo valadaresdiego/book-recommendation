@@ -12,6 +12,7 @@ with estante.transacao() as conn:
 
 paginas = [
     st.Page("paginas/para_voce.py", title="Para você", icon="✨", default=not montagem_pendente),
+    st.Page("paginas/estou_lendo.py", title="Estou lendo", icon="📖"),
     st.Page("paginas/quero_ler.py", title="Quero ler", icon="🔖"),
     st.Page("paginas/estante.py", title="Estante", icon="📚"),
     st.Page("paginas/adicionar.py", title="Adicionar", icon="➕"),

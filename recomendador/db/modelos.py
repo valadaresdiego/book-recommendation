@@ -299,6 +299,20 @@ class QueroLer(Base):
     posicao: Mapped[int | None] = mapped_column(SmallInteger)
 
 
+class EstouLendo(Base):
+    """A lista Estou lendo, sem página nem percentual (R13, SPEC §8.7, ADR 0008)."""
+
+    __tablename__ = "estou_lendo"
+
+    leitor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leitor.id"), primary_key=True)
+    obra_id: Mapped[int] = mapped_column(
+        ForeignKey("obra.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    criado_em: Mapped[datetime] = _criado_em()
+    # Posição em "Para você" (O5): a recebida ou, vinda de Quero ler, a guardada lá.
+    posicao: Mapped[int | None] = mapped_column(SmallInteger)
+
+
 class ConfigApp(Base):
     """Chave/valor do app, como `ultima_atualizacao` (SPEC §10)."""
 

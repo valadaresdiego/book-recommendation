@@ -5,10 +5,12 @@ from componentes import (
     LEITOR,
     abrir_obra,
     autores_em_texto,
+    comecei_a_ler,
     desfazer_dispensa,
     dispensar,
     ja_li,
     mostrar_capa,
+    parei_de_ler,
     quero_ler,
     tirar_de_quero_ler,
 )
@@ -42,23 +44,34 @@ def _vizinhos(titulo: str, itens: list[recomendacao.ObraVizinha], vazio: str, ch
 
 
 def _acoes(p: recomendacao.PaginaObra) -> None:
-    """Obra fora da Estante: "Já li", Quero ler (R8) e Dispensa (R7), SPEC §8.6."""
+    """Obra fora da Estante: "Já li", Quero ler (R8), Dispensa (R7), SPEC §8.6, e Estou
+    lendo (R13), §8.7. Em leitura, só "Já li" e "Parei de ler"."""
     chave = f"obra-{p.obra_id}"
+    if p.estou_lendo:
+        st.info("Você está lendo este livro.", icon="📖")
+        botoes = st.columns(3)
+        with botoes[0]:
+            ja_li(p.obra_id, p.titulo_exibicao, chave)
+        with botoes[1]:
+            parei_de_ler(p.obra_id, p.titulo_exibicao, chave)
+        return
     if p.quero_ler:
         st.info("Na sua lista Quero ler.", icon="🔖")
     if p.dispensada:
         st.warning("Você dispensou este livro de Para você.", icon="🚫")
         desfazer_dispensa(p.obra_id, chave)
-    botoes = st.columns(3)
+    botoes = st.columns(4)
     with botoes[0]:
         ja_li(p.obra_id, p.titulo_exibicao, chave)
     with botoes[1]:
+        comecei_a_ler(p.obra_id, p.titulo_exibicao, chave)
+    with botoes[2]:
         if p.quero_ler:
             tirar_de_quero_ler(p.obra_id, p.titulo_exibicao, chave)
         else:
             quero_ler(p.obra_id, p.titulo_exibicao, chave)
     if not p.dispensada:
-        with botoes[2]:
+        with botoes[3]:
             dispensar(p.obra_id, p.titulo_exibicao, chave)
 
 

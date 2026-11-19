@@ -262,3 +262,76 @@ def test_pagina_da_obra_dispensada_oferece_desfazer(conexao: Connection) -> None
     assert not at.exception
     assert not at.warning
     assert not estante.dispensada(conexao, LEITOR_ID, obras[2])
+
+
+# --- fase 5: Estou lendo (SPEC §8.7) ---
+
+
+def test_comecei_a_ler_tira_de_para_voce_e_entra_em_estou_lendo(conexao: Connection) -> None:
+    obras = _para_voce_com_3_notas(conexao)
+    at = _pagina("para_voce").run()
+
+    at.button(key=f"pv-{obras[3]}-lendo").click().run()
+
+    assert not at.exception
+    assert _titulos_em_para_voce(at) == ["**Livro 4**", "**Livro 5**"]
+    posicao = conexao.execute(
+        text("SELECT posicao FROM estou_lendo WHERE obra_id = :o"), {"o": obras[3]}
+    ).scalar_one()
+    assert posicao == 1
+
+    lista = _pagina("estou_lendo").run()
+    assert not lista.exception
+    assert "**Livro 3**" in [b.label for b in lista.button]
+
+    lista.button(key=f"el-{obras[3]}-parei").click().run()
+
+    assert not lista.exception
+    assert not estante.na_lista_estou_lendo(conexao, LEITOR_ID, obras[3])
+    assert "Você não está lendo nada agora" in lista.info[0].value
+
+
+def test_de_quero_ler_a_ja_li_passando_por_estou_lendo(conexao: Connection) -> None:
+    """O5: a Obra salva de "Para você" chega à Estante com `origem='sugestao'`."""
+    obras = _para_voce_com_3_notas(conexao)
+    estante.salvar_quero_ler(conexao, LEITOR_ID, obras[4], posicao=2)
+    quero = _pagina("quero_ler").run()
+
+    quero.button(key=f"ql-{obras[4]}-lendo").click().run()
+
+    assert not quero.exception
+    assert not estante.na_lista_quero_ler(conexao, LEITOR_ID, obras[4])
+
+    lendo = _pagina("estou_lendo").run()
+    lendo.button(key=f"el-{obras[4]}-salvar").click().run()
+
+    assert not lendo.exception
+    assert not estante.na_lista_estou_lendo(conexao, LEITOR_ID, obras[4])
+    assert estante.leitura_da_obra(conexao, LEITOR_ID, obras[4]).origem == "sugestao"
+    dados = conexao.execute(
+        text("SELECT dados FROM evento WHERE tipo = 'ja_li_de_sugestao'")
+    ).scalar_one()
+    assert dados == {"posicao": 2, "nota": None}
+
+
+def test_estou_lendo_vazia_mostra_a_chamada() -> None:
+    at = _pagina("estou_lendo").run()
+
+    assert not at.exception
+    assert "Você não está lendo nada agora" in at.info[0].value
+
+
+def test_pagina_da_obra_em_estou_lendo(conexao: Connection) -> None:
+    obras = _catalogo_com_vizinhos(conexao)
+    at = _pagina("obra")
+    at.query_params["obra"] = str(obras[2])
+    at.run()
+
+    at.button(key=f"obra-{obras[2]}-lendo").click().run()
+
+    assert not at.exception
+    assert at.info[0].value == "Você está lendo este livro."
+    rotulos = [b.label for b in at.button]
+    assert "Parei de ler" in rotulos
+    assert "Quero ler" not in rotulos
+    assert "Não tenho interesse" not in rotulos
