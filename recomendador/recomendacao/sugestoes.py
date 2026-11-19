@@ -6,14 +6,31 @@ por (1 + popularidade)^β (ADR 0006).
 
 A conta é a mesma de `recomendacao.pontuacao` (a da avaliação offline, §9); um teste
 confere as duas.
+
+Fase 4 (§8.6): as Dispensas (R7) e a lista Quero ler (R8) saem das candidatas; os filtros
+por Gênero e por Edição em português (R10) entram depois da pontuação, sem mudá-la; e cada
+Sugestão traz os 3 maiores Contribuintes (R11).
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import Connection, text
 
 from recomendador.config import PESO_DA_NOTA, config
+
+CONTRIBUINTES = 3  # do Motivo detalhado (R11)
+
+
+@dataclass(frozen=True)
+class Contribuinte:
+    """Uma Leitura de Nota alta que somou pontos à Sugestão (R11)."""
+
+    obra_id: int
+    titulo_exibicao: str
+    nota: int
+    participacao: float  # parcela ÷ soma das parcelas positivas da Sugestão (0 a 1)
 
 
 @dataclass(frozen=True)
@@ -28,6 +45,8 @@ class Sugestao:
     motivo_obra_id: int
     motivo_titulo: str
     motivo_nota: int
+    # O Motivo detalhado: os maiores Contribuintes, o primeiro é o Motivo.
+    contribuintes: tuple[Contribuinte, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,29 +88,62 @@ _CONSULTA = text(
         FROM parcelas p JOIN obra o ON o.id = p.candidata
         GROUP BY p.candidata
     ),
-    motivos AS (
-        SELECT DISTINCT ON (candidata) candidata, motivo, nota
+    positivas AS (
+        SELECT candidata, motivo, nota, parcela,
+               row_number() OVER (PARTITION BY candidata ORDER BY parcela DESC, motivo) AS ordem,
+               sum(parcela) OVER (PARTITION BY candidata) AS total
         FROM parcelas WHERE parcela > 0 AND peso > 0
-        ORDER BY candidata, parcela DESC, motivo
+    ),
+    contribuintes AS (
+        SELECT c.candidata,
+               array_agg(c.motivo ORDER BY c.ordem) AS obras,
+               array_agg(mo.titulo_exibicao ORDER BY c.ordem) AS titulos,
+               array_agg(c.nota ORDER BY c.ordem) AS notas,
+               array_agg(c.parcela / c.total ORDER BY c.ordem) AS participacoes
+        FROM positivas c JOIN obra mo ON mo.id = c.motivo
+        WHERE c.ordem <= :contribuintes
+        GROUP BY c.candidata
     )
     SELECT o.id, o.titulo_exibicao, o.autores, o.capa_url, o.ano_original, p.pontuacao,
-           m.motivo, mo.titulo_exibicao AS motivo_titulo, m.nota AS motivo_nota
+           c.obras, c.titulos, c.notas, c.participacoes
     FROM pontos p
-    JOIN motivos m USING (candidata)
+    JOIN contribuintes c USING (candidata)
     JOIN obra o ON o.id = p.candidata
-    JOIN obra mo ON mo.id = m.motivo
     WHERE p.pontuacao > 0
       AND NOT EXISTS (
           SELECT 1 FROM leitura l WHERE l.leitor_id = :leitor AND l.obra_id = p.candidata
       )
+      AND NOT EXISTS (
+          SELECT 1 FROM dispensa d WHERE d.leitor_id = :leitor AND d.obra_id = p.candidata
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM quero_ler q WHERE q.leitor_id = :leitor AND q.obra_id = p.candidata
+      )
+      -- R10: os filtros vêm depois da pontuação e antes do limite.
+      AND (cardinality(CAST(:generos AS text[])) = 0 OR EXISTS (
+          SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+          WHERE og.obra_id = p.candidata AND g.slug = ANY(CAST(:generos AS text[]))
+      ))
+      AND (NOT :so_edicao_pt OR o.tem_edicao_pt)
     ORDER BY p.pontuacao DESC, o.popularidade DESC, o.id
     LIMIT :limite
     """
 )
 
 
-def para_voce(conn: Connection, leitor_id: uuid.UUID, limite: int | None = None) -> ParaVoce:
-    """As Sugestões do Leitor, da maior pontuação para a menor, cada uma com o Motivo.
+def para_voce(
+    conn: Connection,
+    leitor_id: uuid.UUID,
+    limite: int | None = None,
+    *,
+    generos: Sequence[str] = (),
+    so_edicao_pt: bool = False,
+) -> ParaVoce:
+    """As Sugestões do Leitor, da maior pontuação para a menor, cada uma com o Motivo e os
+    Contribuintes.
+
+    `generos` (slugs) deixa só as Obras de algum desses Gêneros, e `so_edicao_pt` só as
+    com Edição em português (R10). Os filtros não mudam a pontuação nem a ordem.
 
     Com menos Notas que `config.min_notas_para_sugerir`, não calcula (a UI pede mais Notas).
     """
@@ -114,6 +166,9 @@ def para_voce(conn: Connection, leitor_id: uuid.UUID, limite: int | None = None)
             "alfa": cfg.alfa,
             "beta": cfg.beta_popularidade,
             "limite": limite or cfg.max_sugestoes,
+            "contribuintes": CONTRIBUINTES,
+            "generos": list(generos),
+            "so_edicao_pt": so_edicao_pt,
         },
     )
     sugestoes = [
@@ -124,9 +179,13 @@ def para_voce(conn: Connection, leitor_id: uuid.UUID, limite: int | None = None)
             capa_url=r.capa_url,
             ano=r.ano_original,
             pontuacao=float(r.pontuacao),
-            motivo_obra_id=r.motivo,
-            motivo_titulo=r.motivo_titulo,
-            motivo_nota=r.motivo_nota,
+            motivo_obra_id=r.obras[0],
+            motivo_titulo=r.titulos[0],
+            motivo_nota=r.notas[0],
+            contribuintes=tuple(
+                Contribuinte(o, t, n, float(p))
+                for o, t, n, p in zip(r.obras, r.titulos, r.notas, r.participacoes, strict=True)
+            ),
         )
         for r in linhas
     ]

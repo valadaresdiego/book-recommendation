@@ -149,6 +149,8 @@ class Obra(Base):
     goodbooks_book_id: Mapped[int | None] = mapped_column(Integer, unique=True)
     ol_work_key: Mapped[str | None] = mapped_column(Text, unique=True)
     popularidade: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    # Alguma Edição em português conhecida: filtro de idioma de "Para você" (R10, SPEC §8.6).
+    tem_edicao_pt: Mapped[bool] = mapped_column(server_default=text("false"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMENSAO_EMBEDDING))
     embedding_execucao_id: Mapped[int | None] = mapped_column(
         ForeignKey("execucao_modelo.id", ondelete="SET NULL")
@@ -269,6 +271,32 @@ class Evento(Base):
     obra_id: Mapped[int | None] = mapped_column(ForeignKey("obra.id", ondelete="SET NULL"))
     dados: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     criado_em: Mapped[datetime] = _criado_em()
+
+
+class Dispensa(Base):
+    """Obra sugerida que o Leitor dispensou: não volta a "Para você" (R7, SPEC §8.6)."""
+
+    __tablename__ = "dispensa"
+
+    leitor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leitor.id"), primary_key=True)
+    obra_id: Mapped[int] = mapped_column(
+        ForeignKey("obra.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    criado_em: Mapped[datetime] = _criado_em()
+
+
+class QueroLer(Base):
+    """A lista Quero ler, separada da Estante (R8, SPEC §8.6)."""
+
+    __tablename__ = "quero_ler"
+
+    leitor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leitor.id"), primary_key=True)
+    obra_id: Mapped[int] = mapped_column(
+        ForeignKey("obra.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    criado_em: Mapped[datetime] = _criado_em()
+    # Posição em "Para você" quando foi salva de lá (O5); nula se veio da página da Obra.
+    posicao: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class ConfigApp(Base):

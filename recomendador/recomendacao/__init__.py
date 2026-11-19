@@ -19,11 +19,19 @@ from recomendador.recomendacao.obra import (
     PaginaObra,
     pagina_da_obra,
 )
-from recomendador.recomendacao.sugestoes import ParaVoce, Sugestao, para_voce
+from recomendador.recomendacao.sugestoes import (
+    CONTRIBUINTES,
+    Contribuinte,
+    ParaVoce,
+    Sugestao,
+    para_voce,
+)
 
 __all__ = [
+    "CONTRIBUINTES",
     "VIZINHOS_NA_PAGINA",
     "Codificador",
+    "Contribuinte",
     "ModeloDiferente",
     "ObraVizinha",
     "PaginaObra",

@@ -1,6 +1,6 @@
 # SPEC: Recomendador de Livros (v1, local)
 
-> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 3 (todo o P0 do PRD)
+> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 4 (o P0 e o P1 do PRD)
 >
 > **Leia antes:** [PRD](PRD.md) (o quê e por quê) · [GLOSSARY](../GLOSSARY.md) (termos; esta SPEC usa só eles) · [ADRs](adr/) (decisões difíceis de reverter) · pesquisas em [research/](research/)
 
@@ -12,7 +12,7 @@ Esta SPEC diz **como** construir o que o PRD pede. Ela não repete objetivos nem
 
 | Entra (detalhado) | Entra só como ponto de extensão | Entra só como restrição |
 |---|---|---|
-| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura) | R7 dispensar, R8 quero ler, R10 filtros, R11 motivo detalhado (§13) | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar histórico (§13) |
+| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura), fase 4 (Ajustes: R7 dispensar, R8 quero ler, R10 filtros, R11 Motivo detalhado, §8.6) | — | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar histórico (§13) |
 
 Mudanças em relação ao PRD original, registradas nos ADRs e já incorporadas no PRD:
 
@@ -33,7 +33,7 @@ Mudanças em relação ao PRD original, registradas nos ADRs e já incorporadas 
 │                                                                        │
 │  ┌──────────── Streamlit (app/) ────────────┐                          │
 │  │ Montagem · Estante · Buscar · Para você · │  só chama ↓              │
-│  │ Obra                                      │                          │
+│  │ Quero ler · Obra                          │                          │
 │  └───────────────────────────────────────────┘                          │
 │  ┌──────────── pacote recomendador/ ────────────────────────────────┐  │
 │  │ catalogo/      busca, resolução Edição→Obra, enriquecimento       │  │
@@ -81,7 +81,6 @@ DATABASE_URL_TEST=postgresql+psycopg://recomendador:recomendador@127.0.0.1:5433/
 GOOGLE_BOOKS_API_KEY=
 OPEN_LIBRARY_USER_AGENT=recomendador-pessoal/0.1 (contato: <preencher>)
 DATA_DIR=./data
-EMBEDDING_MODEL=<definido pelo bake-off>
 ```
 
 Estrutura de pastas:
@@ -119,6 +118,7 @@ obra            id bigserial PK
                 goodbooks_book_id int null UNIQUE
                 ol_work_key text null UNIQUE    -- ex.: /works/OL893415W
                 popularidade int default 0      -- nº de Notas na Base de coleitura
+                tem_edicao_pt bool default false -- alguma Edição em português conhecida (§6.2, §7.2)
                 embedding vector(1024) null     -- dimensão comum do bake-off (§8.4.1)
                 embedding_execucao_id FK null
                 enriquecida_em timestamptz null
@@ -158,6 +158,10 @@ vizinho         execucao_id FK · obra_id FK · vizinho_id FK
 
 evento          id bigserial PK · leitor_id FK · tipo text · obra_id null
                 dados jsonb · criado_em
+
+dispensa        leitor_id FK · obra_id FK · criado_em            -- R7; PK (leitor_id, obra_id)
+quero_ler       leitor_id FK · obra_id FK · criado_em            -- R8; PK (leitor_id, obra_id)
+                posicao smallint null   -- posição em "Para você" quando foi salva (O5)
 ```
 
 Decisões do modelo:
@@ -166,7 +170,7 @@ Decisões do modelo:
 - `vizinho` é ligado à `execucao_modelo`. Para trocar de modelo, basta inserir uma execução nova e virar `ativa` numa única transação. O app sempre lê só as execuções ativas.
 - O tipo do Vizinho (conteúdo ou coleitura) vem de `execucao_modelo.tipo`.
 - Uma Obra adicionada pelo Leitor recebe Vizinhos de conteúdo na execução de conteúdo **ativa**, com `obra_id` = a Obra nova. Ela nunca tem Vizinhos de coleitura.
-- P1: as tabelas `dispensa (leitor_id, obra_id, criado_em)` e `quero_ler (leitor_id, obra_id, criado_em)` entram com R7 e R8. O esquema da v1 não precisa delas, mas a pontuação já tem o ponto de exclusão (§8.5).
+- `dispensa` e `quero_ler` entram na fase 4 (migração 0006, §8.6). Uma Obra fica em no máximo uma das duas: salvar em Quero ler desfaz a Dispensa, e dispensar tira da lista.
 
 ---
 
@@ -215,12 +219,15 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 - `book_tags.csv` + `tags.csv` vão para `obra_tag`, depois de remover as tags genéricas ou de status (lista de exclusão em `catalogo/tags_ignoradas.txt`: `to-read`, `currently-reading`, `favorites`, `owned`, `books-i-own`, `kindle`, `ebook`, `library`, `default`, `wish-list`, nomes de anos etc.).
 - `ratings.csv` vira `data/raw/notas.parquet` (`usuario_base`, `goodbooks_book_id`, `nota`).
 - Os nomes exatos das colunas são conferidos na carga. Se divergirem, a carga falha com uma mensagem clara.
+- **Duplicatas** (decisão do Leitor, 19/11/2026): duas entradas do goodbooks-10k para o mesmo texto viram uma Obra só (`carga_goodbooks.FUSOES`). Fica a entrada com work na Open Library: *Alice in Wonderland* (257) entra em *Alice's Adventures in Wonderland* (1725), e a coletânea *Batman: The Dark Knight Returns* (568) entra na entrada "#1" (2100), que passa a usar o título da coletânea.
+  - A duplicada não vira Obra. As Notas dela passam para a que fica, e quem deu Nota às duas fica com a Nota da que fica. Os ISBNs e as tags dela também passam, e a popularidade é a soma das duas.
+  - Uma Obra da duplicada que já esteja no banco é fundida a cada carga. As Leituras, Dispensas, Quero ler, Edições, Eventos e ISBNs passam para a que fica (havendo conflito, vale o da que fica). Os Vizinhos dela saem, e o `recalcular` seguinte refaz a Coleitura.
 
 ### 6.2 Enriquecimento pelos dumps da Open Library
 
 Processamento em streaming, sem carregar os dumps inteiros na memória:
 
-1. **Editions**: para cada Edição do dump com ISBN da Obra em `obra_isbn` de origem `base` ou `leitor`, marca o `work_key` dela para a Obra (vale o mais frequente). A work votada é conferida contra as works do dump de mesmo título normalizado (com o subtítulo, se houver) e com uma chave de autor em comum com outras Obras do mesmo autor, já que a Open Library tem várias works e vários registros de autor para o mesmo texto: vence a de mais Edições. Uma votada cujo título não tem nenhuma palavra igual ou quase igual (erro de digitação, cognato) à do título da Obra é de outra Obra: o ISBN caiu na work errada na Open Library (*Dune*, cujo único ISBN da Base aponta para a work de *Shōgun*; *Hamlet*, que caía em *The Merchant of Venice*). Ela perde para qualquer candidata e, se for de outro autor e não houver candidata, é descartada. Uma work fica com uma Obra só. Na disputa, passa na frente a Obra de título igual ao da work (com ou sem o subtítulo) e, depois, a que votou nela: o roteiro de *Hamlet* de Branagh, que está na Base e cujo ISBN cai numa Edição da work de *Hamlet*, perde para *Hamlet*. Quando a work de uma Obra muda, a descrição que veio da work anterior é apagada. A mesma busca dá work às Obras sem nenhum ISBN no dump. Uma segunda passada sobre o dump de editions coleta **todos** os ISBNs dessas works para `obra_isbn` com `origem='open_library'` (é o que faz as Edições brasileiras caírem direto no passo 1 do §7.2). Os ISBNs de origem `open_library` da execução anterior são apagados antes e não votam: vieram da work escolhida antes e manteriam um erro dela (uma Edição de *Hamlet* chegou a cair em *Twelfth Night*). Um ISBN que já está em `obra_isbn` com outra origem fica com a Obra que tem. Logo depois da migração 0004, que criou a coluna, rode o `carregar-base` antes do `enriquecer-ol`: a migração só soube separar os ISBNs do Leitor e marcou o resto como `open_library`. A mesma passada grava, por Obra, o título da Edição em português de data mais recente (`languages` contém `/languages/por`) como `titulo_exibicao`. Uma Edição sem `languages` e com ISBN brasileiro (prefixos 978-85 e 978-65) também conta como em português, mas só na falta de uma que declare o idioma (decisão do Leitor, 18/11/2026). Sem Edição em português, `titulo_exibicao = titulo`.
+1. **Editions**: para cada Edição do dump com ISBN da Obra em `obra_isbn` de origem `base` ou `leitor`, marca o `work_key` dela para a Obra (vale o mais frequente). A work votada é conferida contra as works do dump de mesmo título normalizado (com o subtítulo, se houver) e com uma chave de autor em comum com outras Obras do mesmo autor, já que a Open Library tem várias works e vários registros de autor para o mesmo texto: vence a de mais Edições. Uma votada cujo título não tem nenhuma palavra igual ou quase igual (erro de digitação, cognato) à do título da Obra é de outra Obra: o ISBN caiu na work errada na Open Library (*Dune*, cujo único ISBN da Base aponta para a work de *Shōgun*; *Hamlet*, que caía em *The Merchant of Venice*). Ela perde para qualquer candidata e, se for de outro autor e não houver candidata, é descartada. Uma work fica com uma Obra só. Na disputa, passa na frente a Obra de título igual ao da work (com ou sem o subtítulo) e, depois, a que votou nela: o roteiro de *Hamlet* de Branagh, que está na Base e cujo ISBN cai numa Edição da work de *Hamlet*, perde para *Hamlet*. Quando a work de uma Obra muda, a descrição que veio da work anterior é apagada. A mesma busca dá work às Obras sem nenhum ISBN no dump. Uma segunda passada sobre o dump de editions coleta **todos** os ISBNs dessas works para `obra_isbn` com `origem='open_library'` (é o que faz as Edições brasileiras caírem direto no passo 1 do §7.2). Os ISBNs de origem `open_library` da execução anterior são apagados antes e não votam: vieram da work escolhida antes e manteriam um erro dela (uma Edição de *Hamlet* chegou a cair em *Twelfth Night*). Um ISBN que já está em `obra_isbn` com outra origem fica com a Obra que tem. Logo depois da migração 0004, que criou a coluna, rode o `carregar-base` antes do `enriquecer-ol`: a migração só soube separar os ISBNs do Leitor e marcou o resto como `open_library`. A mesma passada grava, por Obra, o título da Edição em português de data mais recente (`languages` contém `/languages/por`) como `titulo_exibicao`. Uma Edição sem `languages` e com ISBN brasileiro (prefixos 978-85 e 978-65) também conta como em português, mas só na falta de uma que declare o idioma (decisão do Leitor, 18/11/2026). Sem Edição em português, `titulo_exibicao = titulo`. Com qualquer Edição em português, pelo mesmo critério, a Obra recebe `tem_edicao_pt = true`, que o filtro de idioma usa (R10, §8.6); sem nenhuma, volta a `false`, a menos que uma Edição gravada pelo Leitor seja em português.
 2. **Works**: para as works marcadas, preenche `descricao` (se a Obra não tiver), os assuntos (`subjects`, que entram em `obra_tag` com `contagem = 0` para não competir com as tags de leitores) e `ol_work_key`.
 3. Marca `enriquecida_em`.
 
@@ -282,7 +289,7 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 - `resolver_obra` **não grava nada**: devolve a Obra encontrada ou, no caso 4, a proposta da Obra nova e as candidatas. `registrar_resolucao` grava quando o Leitor salva a Leitura, na mesma transação. Assim, uma busca abandonada não deixa Obra órfã no Catálogo, e não é preciso fundir Obras depois.
 - No caso 4, a UI pergunta **"É uma destas?"**. Escolher uma candidata grava a Edição e a Leitura nela; "Nenhuma" cria a Obra nova. O Leitor também pode informar o título original à mão (R1): `informar_titulo_original` reaplica a regra 3 com ele.
 - Na regra 3, o título da própria Edição também entra entre os títulos comparados (cobre as Edições no idioma original e funciona com a Open Library fora do ar). `token_set_ratio` dá 100 para "Dune" × "Dune Messiah"; o `ratio` simples desempata. O sobrenome ignora sufixos como Jr., Junior, Filho e Neto.
-- Em qualquer caso, a Edição escolhida é gravada em `edicao`, ligada à Obra, e os ISBNs dela entram em `obra_isbn` com `origem='leitor'` (a próxima busca resolve pela regra 1, e o `enriquecer-ol` não os apaga). Um ISBN da Edição que já estava lá com origem `open_library` passa a ser do Leitor e da Obra que ele confirmou. Se a Edição é em português e a Obra ainda não tem título em português (`titulo_exibicao = titulo`), o título da Edição vira o `titulo_exibicao` (decisão do Leitor, 18/11/2026).
+- Em qualquer caso, a Edição escolhida é gravada em `edicao`, ligada à Obra, e os ISBNs dela entram em `obra_isbn` com `origem='leitor'` (a próxima busca resolve pela regra 1, e o `enriquecer-ol` não os apaga). Um ISBN da Edição que já estava lá com origem `open_library` passa a ser do Leitor e da Obra que ele confirmou. Se a Edição é em português e a Obra ainda não tem título em português (`titulo_exibicao = titulo`), o título da Edição vira o `titulo_exibicao` (decisão do Leitor, 18/11/2026). Uma Edição em português (`idioma = 'pt'` no Google Books ou `por` na Open Library) também marca `obra.tem_edicao_pt`.
 - No banco real, *Dune* (goodbooks) ficou ligada a uma work duplicada da Open Library (`/works/OL2918756W`); a canônica é `/works/OL893414W`. Por isso a *Duna* da Aleph chega a *Dune* pela regra 3, não pela 1 nem pela 2.
 - Se a Obra já estiver na Estante, a UI avisa ("Você já tem *Duna* na Estante, com nota 5") e não cria nada (R1).
 - **Cadastro manual** (R1, história 11): título + autor criam uma Obra `origem='leitor'` sem Edição, e passam pelos passos 3 e 4 com o texto digitado.
@@ -331,6 +338,8 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `sugestao_aberta` | `{posicao}` | O2 |
 | `ja_li_de_sugestao` | `{posicao, nota}` | O5 |
 | `montagem_pulada` | `{}` | — (fecha a abertura automática da Montagem) |
+| `sugestao_dispensada` | `{posicao}`, com `posicao` nula fora de "Para você" | O2 (R7) |
+| `quero_ler_salvo` | `{posicao}`, idem | O2 (R8) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
 
@@ -421,7 +430,7 @@ Regras do bake-off:
 
 ### 8.5 "Para você" (R4)
 
-`recomendacao.para_voce(leitor_id, limite=20) -> list[Sugestao]`, implementada como **uma consulta SQL** sobre as execuções ativas:
+`recomendacao.para_voce(leitor_id, limite=20, generos=(), so_edicao_pt=False) -> ParaVoce`, implementada como **uma consulta SQL** sobre as execuções ativas:
 
 ```
 peso(nota):  5 → +1,0 · 4 → +0,6 · 3 → 0 · 2 → −0,5 · 1 → −1,0       (tabela em config)
@@ -434,18 +443,44 @@ para cada Leitura r com Nota e peso ≠ 0:
 
 soma(c)      = Σ_r parcela(c, r)
 pontuacao(c) = soma(c) × (1 + popularidade(c))^β                     (ADR 0006)
-candidatos   = c ∉ Estante  (P1: ∉ dispensas)  e  pontuacao(c) > 0
+candidatos   = c ∉ Estante, c ∉ Dispensas, c ∉ Quero ler  e  pontuacao(c) > 0
+filtros      = Gênero e idioma (R10), depois da pontuação (§8.6)
 ordem        = pontuacao desc, depois popularidade desc
-Motivo(c)    = o r com maior parcela(c, r) > 0
+Contribuintes(c) = os 3 r com maior parcela(c, r) > 0, com parcela ÷ Σ parcelas positivas (R11)
+Motivo(c)    = o primeiro Contribuinte
 ```
 
 - **Escala:** cada execução divide as suas similaridades pela média delas (`execucao_modelo.parametros.escala`) antes da mistura. Sem isso, o conteúdo (~0,55 de média com o Qwen3-4B) engole a Coleitura (~0,07) em qualquer α razoável (ADR 0007). Execução sem escala vale 1.
 - **α** fica em config: 1,0 na fase 2 e **0,25** desde a calibração da fase 3 (ADR 0007).
-- **β** (peso da popularidade) fica em config: 0,25 no bake-off (ADR 0006) e **0** desde a fase 3 (ADR 0007). O fator é positivo, então não muda quem é candidata (soma > 0), a exclusão da Estante nem o Motivo: só a ordem.
+- **β** (peso da popularidade) fica em config: 0,25 no bake-off (ADR 0006), 0 na calibração da fase 3 e **0,25** de novo por decisão do Leitor (ADR 0007, atualização de 19/11/2026). O fator é positivo, então não muda quem é candidata (soma > 0), a exclusão da Estante nem o Motivo: só a ordem.
 - Como a "Obra" é a unidade (ADR 0001), excluir a Estante já exclui todas as Edições e traduções (critério do R4).
 - O Motivo nunca é uma Leitura com Nota ≤ 3, porque o peso dessas é ≤ 0 e a parcela não pode ser positiva. A consulta também só aceita Motivo de peso > 0, para o caso raro de similaridade negativa. O texto é "Porque você deu {nota} a *{titulo_exibicao}*".
 - **Menos de 3 Leituras com Nota:** não calcula. Mostra "Avalie pelo menos 3 livros para receber sugestões" e um contador "{n} de 3", com um link para a Montagem da Estante.
 - Meta de desempenho: **≤ 500 ms** com 500 Leituras na Estante.
+
+### 8.6 Fase 4: Ajustes (R7, R8, R10, R11)
+
+Decisões do Leitor (19/11/2026): o filtro de idioma usa as Edições em português; Quero ler é uma página própria; a Obra salva em Quero ler sai de "Para você"; a Obra dispensada sai só de "Para você".
+
+**R7, Dispensa.** `estante.dispensar(leitor_id, obra_id, posicao=None)` grava em `dispensa` (repetir não duplica), tira a Obra de Quero ler e registra `sugestao_dispensada`. `estante.desfazer_dispensa(...)` apaga a linha.
+- A consulta do §8.5 exclui as Dispensas das candidatas. A pontuação das outras não muda, e a vaga vai para a próxima Sugestão.
+- A Obra dispensada continua em "Parecidos com este" e "Quem leu este também gostou". A página dela mostra "Você dispensou este livro de Para você" e o botão "Desfazer".
+- A avaliação offline (§9) não tem Dispensas. `recomendacao.pontuacao` não muda, e o teste de paridade com o SQL continua o mesmo.
+
+**R8, Quero ler.** `estante.salvar_quero_ler(leitor_id, obra_id, posicao=None)` grava em `quero_ler`, desfaz uma Dispensa da Obra e registra `quero_ler_salvo`. Uma Obra da Estante levanta `JaNaEstante`. `estante.tirar_de_quero_ler(...)` apaga a linha, e `estante.listar_quero_ler(leitor_id)` devolve a lista, da mais recente para a mais antiga.
+- `estante.adicionar` tira a Obra de Quero ler na mesma transação. É o "Já li" do R8.
+- As Obras de Quero ler saem das candidatas do §8.5.
+- `quero_ler.posicao` guarda a posição em "Para você" quando a Obra foi salva de lá. O "Já li" na página Quero ler grava essas Obras com `origem='sugestao'` e registra `ja_li_de_sugestao` com essa posição (O5). As salvas da página da Obra entram com `origem='catalogo'`.
+
+**R10, filtros.** `para_voce(..., generos=("fantasia", ...), so_edicao_pt=True)`.
+- **Gênero:** a Obra passa se pertence a **algum** dos Gêneros escolhidos (linha em `obra_genero`, §6.3).
+- **Idioma:** com `so_edicao_pt`, passa só a Obra com `tem_edicao_pt`. A coluna vem dos dumps da Open Library (§6.2) e das Edições gravadas pelo Leitor (§7.2). A migração 0006 a preenche provisoriamente com `titulo_exibicao <> titulo`, que só acerta as Obras com título em português diferente do canônico. O próximo `enriquecer-ol` completa.
+- Os filtros entram no `WHERE` final da consulta, depois da pontuação. A pontuação e a ordem relativa das Sugestões que passam são as mesmas da lista sem filtro, e o `LIMIT` vem depois do filtro, então a lista filtrada não fica curta à toa.
+- Na UI, os filtros ficam no topo de "Para você": chips de Gênero (`st.pills`, seleção múltipla) e a chave "Só com edição em português". Mudar um filtro conta como nova abertura para o `sugestao_exibida`.
+
+**R11, Motivo detalhado.** `Sugestao.contribuintes` traz até 3 `Contribuinte(obra_id, titulo_exibicao, nota, participacao)`, em ordem de parcela. `participacao` = parcela ÷ soma das parcelas positivas da Sugestão, de 0 a 1. O primeiro é o Motivo (`motivo_obra_id`). Os campos `motivo_*` continuam, para o evento `sugestao_exibida`.
+- A consulta calcula os contribuintes na CTE das parcelas, com `row_number()` em vez do `DISTINCT ON`.
+- O texto é montado só na UI (§13, LLM nos Motivos). Num popover "Por quê?" do card, cada linha mostra "*{titulo}*, sua nota {nota}: {participacao} %".
 
 ---
 
@@ -475,7 +510,7 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 - K e λ variam só a coleitura, que a avaliação recalcula sobre o treino a cada configuração. O conteúdo usa os Vizinhos gravados da execução (K = 50); com α = 1, K e λ não se aplicam.
 - A combinação (α de `config`) fica em `metricas.combinada` das duas execuções, com a melhor configuração da varredura em `combinada.melhor`.
 - **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual.
-- **Resultado (19/11/2026, ADR 0007):** escalas igualadas, α = 0,25, β = 0, K = 20, λ = 10 e a tabela de pesos do PRD. NDCG@20 combinado 0,3176, contra 0,3117 da Coleitura sozinha, 0,0650 do conteúdo sozinho e 0,0828 da popularidade.
+- **Resultado (19/11/2026, ADR 0007):** escalas igualadas, α = 0,25, β = 0, K = 20, λ = 10 e a tabela de pesos do PRD. NDCG@20 combinado 0,3176, contra 0,3117 da Coleitura sozinha, 0,0650 do conteúdo sozinho e 0,0828 da popularidade. Depois, o Leitor voltou o β para 0,25 (NDCG@20 0,2965, cobertura 40 %), para proteger as Estantes com muitas Obras fora da Base.
 - O UCSD Goodreads é validação extra opcional e manual, só local (licença: ADR 0003). Ele não entra no `recalcular`.
 
 ---
@@ -504,15 +539,16 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 ## 11. UI Streamlit
 
-`st.navigation` com cinco páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
+`st.navigation` com seis páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
 
 | Página | Conteúdo | Requisitos |
 |---|---|---|
-| Para você | Até 20 Sugestões em cards (capa, título, autor, Motivo, "Já li"). Nas fases 0 e 1, mostra "Disponível na fase 2". | R4 |
+| Para você | Filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Não tenho interesse", "Já li"). | R4, R7, R8, R10, R11 |
+| Quero ler | As Obras salvas, com "Já li" e "Tirar da lista". Vazia: chamada para "Para você". | R8 |
 | Estante | §7.5 | R3 |
 | Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar. Também tem o cadastro manual. | R1, R2 |
 | Montagem da Estante | §7.4 | — |
-| Obra (oculta) | §8.3 | R5 |
+| Obra (oculta) | §8.3, com "Quero ler" e "Desfazer" a Dispensa (§8.6) | R5, R7, R8 |
 
 - O rodapé traz a atribuição do goodbooks-10k (CC BY-SA 4.0) e da Open Library.
 - Funções de leitura usam `st.cache_data` com TTL curto (30 s). Qualquer escrita limpa o cache (`st.cache_data.clear()`), para que a mudança de Nota apareça na hora (R2).
@@ -526,7 +562,7 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 | Camada | Como | Exemplos |
 |---|---|---|
-| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata |
+| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata; a Obra dispensada não volta; "Já li" tira de Quero ler; o filtro não muda a pontuação nem a ordem; os 3 Contribuintes com a participação |
 | Algoritmos | Funções puras com matrizes pequenas feitas à mão | Cosseno ajustado e encolhimento contra um cálculo manual 4×3; top K exclui a própria Obra e respeita o limite por autor; NDCG@20 contra um valor conhecido |
 | Resolução Edição → Obra | Respostas gravadas da OL e do Google Books (JSON em `tests/dados/http/`), via transporte falso do `httpx` | Um caso por regra (1 a 4) do §7.2, incluindo *Duna* (Aleph) → *Dune* |
 | Fixture de Catálogo | ~40 Obras sintéticas, com Vizinhos fixos | Com 5 Notas positivas, `para_voce` devolve ≥ 10 Sugestões (O1) |
@@ -539,12 +575,7 @@ As chamadas reais às APIs externas e à GPU ficam em testes marcados `@pytest.m
 
 ## 13. Pontos de extensão (P1) e restrições (P2)
 
-**P1, já previsto no desenho:**
-
-- **R7 Dispensar:** tabela `dispensa`. A consulta do §8.5 já tem o filtro "∉ dispensas" como ponto de inserção. Evento `sugestao_dispensada`.
-- **R8 Quero ler:** tabela `quero_ler`. "Já li" sobre um item da lista o remove dela. Evento `quero_ler_salvo`. Junto com R7, completa a medição do O2.
-- **R10 Filtros:** filtro por Gênero (via `obra_genero`) e por idioma, aplicado **depois** da pontuação, sem recalcular.
-- **R11 Motivo detalhado:** a consulta do §8.5 já calcula todas as parcelas, e basta expor as 3 maiores com o peso.
+**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6).
 
 **P2, o que o desenho não pode impedir:**
 
@@ -566,6 +597,7 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | **1. Estante** | R1, R2, R3, Montagem da Estante, Eventos | Critérios de R1 a R3 do PRD; busca ≤ 2 s p95; os 4 caminhos do §7.2 cobertos por teste; adicionar + dar Nota < 30 s (medido pelo evento `leitura_salva`) |
 | **2. Parecidos** | Bake-off (ADR 0006), R5 + R5a, R4 com α = 1, avaliação offline | NDCG@20 só com conteúdo > baseline de popularidade; ≥ 80 % das Leituras com R5a preenchido (O4); com 5 Notas, ≥ 10 Sugestões (O1) |
 | **3. Coleitura** | R5b, R4 completo, calibração de α | NDCG@20 combinado ≥ o melhor dos dois isolados; **taxa de correspondência das Leituras com Obras `origem='base'` ≥ 40 %**, senão reabrir a escolha da Base de coleitura (PRD §9); ≥ 40 % das Leituras com R5b preenchido (O4) |
+| **4. Ajustes** | R7, R8, R10, R11 (§8.6), migração 0006, `tem_edicao_pt` no `enriquecer-ol` | Critérios de R7, R8, R10 e R11 do PRD cobertos por teste contra o banco real; o teste de paridade SQL × avaliação inalterado; a consulta do O2 (salvas ÷ (salvas + dispensadas) nas top 10) em `reports/consultas-metricas.sql`; `enriquecer-ol` rodado de novo no banco do app, com a contagem de `tem_edicao_pt` no log |
 
 ---
 

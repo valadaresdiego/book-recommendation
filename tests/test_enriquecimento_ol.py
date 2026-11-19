@@ -164,6 +164,12 @@ def obras(conexao: Connection) -> dict[str, int]:
 
 
 def test_enriquece_as_obras(conexao: Connection, dumps: Path, obras: dict[str, int]) -> None:
+    # Uma Edição em português gravada pelo Leitor (SPEC §7.2) não se perde.
+    conexao.execute(
+        text("INSERT INTO edicao (obra_id, titulo, idioma) VALUES (:o, 'Neuromancer', 'pt')"),
+        {"o": obras["neuromancer"]},
+    )
+
     resumo = enriquecer_ol(conexao, dumps)
 
     duna = _linha(conexao, obras["duna"])
@@ -171,6 +177,7 @@ def test_enriquece_as_obras(conexao: Connection, dumps: Path, obras: dict[str, i
     assert duna["descricao"] == "Em Arrakis..."
     assert duna["titulo_exibicao"] == "Duna"  # a Edição em português mais recente
     assert duna["titulo"] == "Dune"
+    assert duna["tem_edicao_pt"]
     assert duna["enriquecida_em"] is not None
     assert _consultar(
         conexao, "SELECT isbn13 FROM obra_isbn WHERE obra_id = :o", obras["duna"]
@@ -187,6 +194,7 @@ def test_enriquece_as_obras(conexao: Connection, dumps: Path, obras: dict[str, i
     assert fundacao["ol_work_key"] == "/works/OL3W"
     assert fundacao["descricao"] == "Hari Seldon..."
     assert fundacao["titulo_exibicao"] == "Foundation"  # sem Edição em português
+    assert not fundacao["tem_edicao_pt"]
     assert FUNDACAO_OUTRA in _consultar(
         conexao, "SELECT isbn13 FROM obra_isbn WHERE obra_id = :o", obras["fundacao"]
     )
@@ -195,9 +203,15 @@ def test_enriquece_as_obras(conexao: Connection, dumps: Path, obras: dict[str, i
     assert neuromancer["ol_work_key"] is None
     assert neuromancer["descricao"] is None
     assert neuromancer["enriquecida_em"] is not None
+    assert neuromancer["tem_edicao_pt"]  # pela Edição do Leitor
 
     assert resumo == ResumoEnriquecimento(
-        obras=3, com_work=2, com_descricao=2, com_titulo_pt=1, isbns_da_open_library=2
+        obras=3,
+        com_work=2,
+        com_descricao=2,
+        com_titulo_pt=1,
+        isbns_da_open_library=2,
+        com_edicao_pt=2,
     )
 
 
@@ -286,6 +300,10 @@ def test_isbn_brasileiro_vale_como_edicao_em_portugues_sem_idioma(
     assert _linha(conexao, fundacao)["titulo_exibicao"] == "Fundação"
     assert _linha(conexao, neuromancer)["titulo_exibicao"] == "Neuromancer"
     assert resumo.com_titulo_pt == 2
+    # Com título igual ao canônico, a Edição em português também marca a Obra (R10).
+    assert _linha(conexao, fundacao)["tem_edicao_pt"]
+    assert _linha(conexao, neuromancer)["tem_edicao_pt"]
+    assert resumo.com_edicao_pt == 2
 
 
 HERBERT, CLAVELL, OUTRO = "/authors/OL1A", "/authors/OL9A", "/authors/OL7A"

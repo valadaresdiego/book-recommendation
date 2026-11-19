@@ -21,14 +21,13 @@ class Config(BaseSettings):
     google_books_api_key: str = ""
     open_library_user_agent: str = "recomendador-pessoal/0.1"
     data_dir: Path = Path("./data")
-    embedding_model: str = ""
 
     # SPEC §8.5: peso do conteúdo na mistura com a Coleitura, com as escalas já igualadas.
     # Calibrado na fase 3 (ADR 0007).
     alfa: float = 0.25
     # ADR 0006: a soma do §8.5 é multiplicada por (1 + popularidade)^β. Com a Coleitura,
-    # β = 0 venceu (ADR 0007).
-    beta_popularidade: float = 0.0
+    # β = 0 venceu na avaliação, mas o Leitor voltou para 0,25 (ADR 0007, atualização).
+    beta_popularidade: float = 0.25
     max_sugestoes: int = 20
     min_notas_para_sugerir: int = 3
 

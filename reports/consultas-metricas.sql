@@ -34,9 +34,26 @@ WHERE leitor_id = :leitor
 GROUP BY 1
 ORDER BY 1;
 
--- O2 (parcial na v1): interesse nas top 10 de "Para você".
--- A taxa de aceite do PRD (salvos ÷ (salvos + dispensados)) depende de R7 e R8 (P1); até lá,
--- mede-se quanto das top 10 exibidas o Leitor abriu ou marcou como "Já li".
+-- O2: taxa de aceite das top 10 de "Para você" (PRD §7: meta ≥ 50 %, ambicioso ≥ 70 %).
+-- Salvas em Quero ler ÷ (salvas + dispensadas), contando cada Obra uma vez, pela última
+-- reação dela enquanto estava nas top 10 (SPEC §8.6). Vale também quando a reação veio da
+-- página da Obra aberta a partir de "Para você", que guarda a posição.
+WITH reacoes AS (
+    SELECT DISTINCT ON (obra_id) obra_id, tipo
+    FROM evento
+    WHERE leitor_id = :leitor
+      AND tipo IN ('quero_ler_salvo', 'sugestao_dispensada')
+      AND (dados ->> 'posicao')::int <= 10
+    ORDER BY obra_id, criado_em DESC, id DESC
+)
+SELECT count(*) FILTER (WHERE tipo = 'quero_ler_salvo') AS salvas,
+       count(*) FILTER (WHERE tipo = 'sugestao_dispensada') AS dispensadas,
+       round(100.0 * count(*) FILTER (WHERE tipo = 'quero_ler_salvo') / nullif(count(*), 0), 1)
+           AS pct_aceite
+FROM reacoes;
+
+-- O2, complemento: interesse nas top 10 exibidas, medido por quanto o Leitor abriu ou
+-- marcou como "Já li".
 WITH exibidas AS (
     SELECT obra_id, criado_em
     FROM evento

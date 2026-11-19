@@ -67,3 +67,12 @@ O β = 0,25 do ADR 0006 compensava o conteúdo sozinho, que achava Obras parecid
 - Com β = 0, o conteúdo sozinho fica abaixo da popularidade (0,0650 contra 0,0828). Ele não é usado sozinho desde a fase 3. Se a Coleitura for desativada, o β volta para 0,25.
 - Uma execução só substitui a ativa do mesmo tipo se as duas foram avaliadas com a mesma divisão e o mesmo β (`ativar` confere `metricas.divisao` e `metricas.beta`). As execuções de conteúdo 2 e 3 têm métricas com β = 0,25 e precisam de um `avaliar` novo antes de concorrer.
 - O ALS (`implicit`), candidato alternativo do §8.1, não foi testado. A Coleitura item-item já passa com folga do conteúdo e da popularidade.
+
+## Atualização (19/11/2026): β volta para 0,25
+
+O Leitor decidiu voltar o β para 0,25 antes de começar a registrar Leituras, para não correr o risco aceito acima: as Obras fora da Base, que só têm Vizinhos de conteúdo, voltariam a trazer Sugestões pouco lidas.
+
+- Custo medido na varredura (α = 0,25, K = 20, λ = 10, tabela do PRD): NDCG@20 de 0,3176 para 0,2965 (−6,6 %) e cobertura de 56 % para 40 %. Ainda bem acima da popularidade (0,0828).
+- α, K, λ e a tabela de pesos não mudam.
+- Como o `ativar` só compara execuções avaliadas com o mesmo β, as execuções ativas precisam de um `avaliar` com β = 0,25 antes de uma nova concorrer com elas.
+- Voltar para β = 0 é só mudar `beta_popularidade` na `config`.

@@ -292,6 +292,61 @@ def texto_do_motivo(nota: int, titulo: str) -> str:
     return f"Porque você deu {nota} a *{titulo}*"
 
 
+def texto_do_contribuinte(c: recomendacao.Contribuinte) -> str:
+    """Uma linha do Motivo detalhado (R11, SPEC §8.6)."""
+    return f"*{c.titulo_exibicao}*, sua nota {c.nota}: {round(100 * c.participacao)} %"
+
+
+def posicao_da_sugestao(obra_id: int) -> int | None:
+    """A posição da Obra em "Para você" nesta sessão, se ela veio de lá (O2 e O5)."""
+    return st.session_state.get("posicao-da-sugestao", {}).get(obra_id)
+
+
+def quero_ler(obra_id: int, titulo: str, chave: str) -> None:
+    """O botão "Quero ler" (R8): guarda a Obra na lista e a tira de "Para você"."""
+    if not st.button("Quero ler", key=f"{chave}-quero", icon="🔖", use_container_width=True):
+        return
+    try:
+        with estante.transacao() as conn:
+            estante.salvar_quero_ler(conn, LEITOR, obra_id, posicao_da_sugestao(obra_id))
+    except estante.JaNaEstante as e:
+        st.warning(str(e), icon="📚")
+        return
+    depois_de_gravar()
+    st.toast(f"{titulo} entrou na sua lista Quero ler.")
+    st.rerun()
+
+
+def tirar_de_quero_ler(obra_id: int, titulo: str, chave: str) -> None:
+    if not st.button("Tirar da lista", key=f"{chave}-tirar", use_container_width=True):
+        return
+    with estante.transacao() as conn:
+        estante.tirar_de_quero_ler(conn, LEITOR, obra_id)
+    depois_de_gravar()
+    st.toast(f"{titulo} saiu da sua lista Quero ler.")
+    st.rerun()
+
+
+def dispensar(obra_id: int, titulo: str, chave: str) -> None:
+    """O botão "Não tenho interesse" (R7): a Obra não volta a "Para você"."""
+    if not st.button("Não tenho interesse", key=f"{chave}-dispensar", type="tertiary"):
+        return
+    with estante.transacao() as conn:
+        estante.dispensar(conn, LEITOR, obra_id, posicao_da_sugestao(obra_id))
+    depois_de_gravar()
+    st.toast(f"{titulo} não volta mais a Para você.")
+    st.rerun()
+
+
+def desfazer_dispensa(obra_id: int, chave: str) -> None:
+    if not st.button("Desfazer", key=f"{chave}-desfazer"):
+        return
+    with estante.transacao() as conn:
+        estante.desfazer_dispensa(conn, LEITOR, obra_id)
+    depois_de_gravar()
+    st.rerun()
+
+
 def abrir_obra(obra_id: int, posicao: int | None = None) -> None:
     """Vai para a página da Obra. Vindo de "Para você", registra `sugestao_aberta` (O2)."""
     if posicao is not None:
@@ -304,15 +359,16 @@ def abrir_obra(obra_id: int, posicao: int | None = None) -> None:
 def ja_li(obra_id: int, titulo: str, chave: str) -> None:
     """O botão "Já li": abre a Nota e grava a Leitura (R1 + R2 num passo).
 
-    Uma Obra que veio de "Para você" entra com `origem='sugestao'` e registra
-    `ja_li_de_sugestao` (O5); as demais, com `origem='catalogo'`.
+    Uma Obra que veio de "Para você" (direto ou pela lista Quero ler) entra com
+    `origem='sugestao'` e registra `ja_li_de_sugestao` (O5); as demais, com
+    `origem='catalogo'`. `estante.adicionar` tira a Obra de Quero ler (R8).
     """
     with st.popover("Já li", use_container_width=True, key=f"{chave}-pop"):
         estrelas = st.feedback("stars", key=f"{chave}-nota")
         if not st.button("Salvar na Estante", key=f"{chave}-salvar", type="primary"):
             return
         nota = None if estrelas is None else estrelas + 1
-        posicao = st.session_state.get("posicao-da-sugestao", {}).get(obra_id)
+        posicao = posicao_da_sugestao(obra_id)
         try:
             with estante.transacao() as conn:
                 estante.adicionar(

@@ -1,7 +1,17 @@
 """Página da Obra (R5, SPEC §8.3), aberta por `?obra=<id>`: dados, Nota e Vizinhos."""
 
 import streamlit as st
-from componentes import LEITOR, abrir_obra, autores_em_texto, ja_li, mostrar_capa
+from componentes import (
+    LEITOR,
+    abrir_obra,
+    autores_em_texto,
+    desfazer_dispensa,
+    dispensar,
+    ja_li,
+    mostrar_capa,
+    quero_ler,
+    tirar_de_quero_ler,
+)
 
 from recomendador import recomendacao
 
@@ -31,6 +41,27 @@ def _vizinhos(titulo: str, itens: list[recomendacao.ObraVizinha], vazio: str, ch
                 st.caption(autores_em_texto(v.autores[:1]) + lido)
 
 
+def _acoes(p: recomendacao.PaginaObra) -> None:
+    """Obra fora da Estante: "Já li", Quero ler (R8) e Dispensa (R7), SPEC §8.6."""
+    chave = f"obra-{p.obra_id}"
+    if p.quero_ler:
+        st.info("Na sua lista Quero ler.", icon="🔖")
+    if p.dispensada:
+        st.warning("Você dispensou este livro de Para você.", icon="🚫")
+        desfazer_dispensa(p.obra_id, chave)
+    botoes = st.columns(3)
+    with botoes[0]:
+        ja_li(p.obra_id, p.titulo_exibicao, chave)
+    with botoes[1]:
+        if p.quero_ler:
+            tirar_de_quero_ler(p.obra_id, p.titulo_exibicao, chave)
+        else:
+            quero_ler(p.obra_id, p.titulo_exibicao, chave)
+    if not p.dispensada:
+        with botoes[2]:
+            dispensar(p.obra_id, p.titulo_exibicao, chave)
+
+
 try:
     obra_id: int | None = int(st.query_params.get("obra", ""))
 except ValueError:
@@ -56,7 +87,7 @@ with info:
         nota = f"sua nota: {'★' * p.nota}" if p.nota else "sem nota"
         st.success(f"Na sua Estante ({nota}).", icon="📚")
     else:
-        ja_li(p.obra_id, p.titulo_exibicao, f"obra-{p.obra_id}")
+        _acoes(p)
     if p.descricao:
         st.write(p.descricao)
 

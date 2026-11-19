@@ -1,4 +1,7 @@
-"""Carga do goodbooks-10k no Catálogo (SPEC §6.1). Idempotente: upsert por `goodbooks_book_id`."""
+"""Carga do goodbooks-10k no Catálogo (SPEC §6.1). Idempotente: upsert por `goodbooks_book_id`.
+
+As entradas duplicadas do goodbooks-10k (`FUSOES`) são fundidas na que fica, a cada carga.
+"""
 
 import logging
 import re
@@ -7,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import Connection, and_, delete, select
+from sqlalchemy import Connection, and_, delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from recomendador.catalogo.isbn import completar_isbn13, normalizar_isbn
@@ -40,6 +43,27 @@ COLUNAS = {
 # "The Hunger Games (The Hunger Games, #1)" → "The Hunger Games". Só sufixos com "#",
 # para não cortar parênteses que fazem parte do título ("I Am America (And So Can You!)").
 _SUFIXO_DE_SERIE = re.compile(r"\s*\([^()]*#[^()]*\)\s*$")
+
+
+@dataclass(frozen=True)
+class Fusao:
+    """Duas entradas do goodbooks-10k para o mesmo texto (SPEC §6.1).
+
+    A duplicada não vira Obra: as Notas, os ISBNs, as tags e a popularidade dela vão para a
+    que fica, e uma Obra que ela já tinha no banco é fundida na que fica.
+    """
+
+    duplicada: int  # book_id que some
+    fica: int  # book_id que fica (o que tem work na Open Library)
+    titulo: str | None = None  # novo título da que fica, quando o dela é pior
+
+
+FUSOES = (
+    # "Alice in Wonderland" (sem work) → "Alice's Adventures in Wonderland".
+    Fusao(duplicada=257, fica=1725),
+    # A coletânea (sem work) → a entrada "#1", que ficou com a work da Obra inteira.
+    Fusao(duplicada=568, fica=2100, titulo="Batman: The Dark Knight Returns"),
+)
 
 
 class ArquivoInvalido(ValueError):
@@ -120,10 +144,24 @@ def _candidatos_do_isbn13(valor: object) -> set[str]:
     return {i for i, ok in ((inteiro, inteiro[-1] <= "5"), (somado, somado[-1] >= "5")) if ok}
 
 
-def _linhas_de_obra(books: pd.DataFrame) -> list[dict]:
+def _destino(fusoes: tuple[Fusao, ...]) -> dict[int, int]:
+    """book_id da duplicada → book_id da que fica."""
+    return {f.duplicada: f.fica for f in fusoes}
+
+
+def _linhas_de_obra(books: pd.DataFrame, fusoes: tuple[Fusao, ...]) -> list[dict]:
+    destino = _destino(fusoes)
+    titulos = {f.fica: f.titulo for f in fusoes if f.titulo}
+    popularidade = (
+        books.assign(fica=books["book_id"].map(lambda b: destino.get(int(b), int(b))))
+        .groupby("fica")["work_ratings_count"]
+        .sum()
+    )
     linhas = []
     for b in books.itertuples(index=False):
-        titulo = limpar_titulo(str(b.title))
+        if int(b.book_id) in destino:
+            continue
+        titulo = titulos.get(int(b.book_id)) or limpar_titulo(str(b.title))
         capa = _texto(b.image_url)
         ano = _texto(b.original_publication_year)
         linhas.append(
@@ -135,7 +173,7 @@ def _linhas_de_obra(books: pd.DataFrame) -> list[dict]:
                 "autores": [a.strip() for a in str(b.authors).split(",") if a.strip()],
                 "ano_original": int(float(ano)) if ano else None,
                 "capa_url": None if capa is None or "nophoto" in capa else capa,
-                "popularidade": int(b.work_ratings_count),
+                "popularidade": int(popularidade[int(b.book_id)]),
                 "origem": OrigemObra.BASE,
             }
         )
@@ -169,7 +207,9 @@ def _upsert_obras(conn: Connection, linhas: list[dict]) -> dict[int, int]:
 def _linhas_de_tag(
     book_tags: pd.DataFrame, tags: pd.DataFrame, books: pd.DataFrame, obra_por_gb: dict[int, int]
 ) -> list[dict]:
-    """Top tags úteis por Obra. book_tags usa o id do Goodreads, não o `book_id`."""
+    """Top tags úteis por Obra. book_tags usa o id do Goodreads, não o `book_id`.
+
+    `obra_por_gb` já leva a duplicada de uma fusão para a Obra que fica."""
     nomes = tags.assign(tag=tags["tag_name"].astype(str).str.strip().str.lower())
     nomes = nomes[nomes["tag"].map(tag_util)]
     df = book_tags.merge(nomes[["tag_id", "tag"]], on="tag_id")
@@ -187,11 +227,22 @@ def _linhas_de_tag(
     ]
 
 
-def _gravar_notas(pasta: Path, obras_conhecidas: set[int]) -> int:
+def _gravar_notas(pasta: Path, obras_conhecidas: set[int], fusoes: tuple[Fusao, ...]) -> int:
     notas = _ler_csv(pasta, "ratings.csv")
     notas = notas.rename(
         columns={"user_id": "usuario_base", "book_id": "goodbooks_book_id", "rating": "nota"}
     )[["usuario_base", "goodbooks_book_id", "nota"]]
+    # A Nota dada à duplicada passa para a que fica; quem deu Nota às duas fica com a da
+    # que fica (a ordenação estável põe as da duplicada depois).
+    destino = _destino(fusoes)
+    duplicada = notas["goodbooks_book_id"].isin(list(destino))
+    notas = (
+        notas.assign(goodbooks_book_id=notas["goodbooks_book_id"].replace(destino), _dup=duplicada)
+        .sort_values("_dup", kind="stable")
+        .drop_duplicates(["usuario_base", "goodbooks_book_id"])
+        .sort_index()
+        .drop(columns="_dup")
+    )
     notas = notas[notas["goodbooks_book_id"].isin(obras_conhecidas)]
     notas = notas.astype({"usuario_base": "int32", "goodbooks_book_id": "int32", "nota": "int8"})
     destino = pasta / ARQUIVO_NOTAS
@@ -201,14 +252,21 @@ def _gravar_notas(pasta: Path, obras_conhecidas: set[int]) -> int:
     return len(notas)
 
 
-def carregar_base(conn: Connection, pasta: Path) -> ResumoCarga:
+def carregar_base(conn: Connection, pasta: Path, fusoes: tuple[Fusao, ...] = FUSOES) -> ResumoCarga:
     """Carrega `books`, `tags` e `book_tags` no banco e grava `notas.parquet` em `pasta`."""
     books = _ler_csv(pasta, "books.csv", dtype={"isbn": str, "isbn13": str})
     tags = _ler_csv(pasta, "tags.csv", keep_default_na=False)
     book_tags = _ler_csv(pasta, "book_tags.csv")
 
-    obra_por_gb = _upsert_obras(conn, _linhas_de_obra(books))
-    log.info("%d Obras gravadas", len(obra_por_gb))
+    fusoes = tuple(f for f in fusoes if f.duplicada in set(books["book_id"]))
+    obra_por_gb = _upsert_obras(conn, _linhas_de_obra(books, fusoes))
+    obras_da_base = len(obra_por_gb)
+    log.info("%d Obras gravadas", obras_da_base)
+    for f in fusoes:
+        _fundir_no_banco(conn, f, obra_por_gb[f.fica])
+        log.info("Fusão: goodbooks %d entra na Obra %d", f.duplicada, obra_por_gb[f.fica])
+    # Daqui em diante, a duplicada aponta para a Obra que fica (ISBNs e tags).
+    obra_por_gb |= {f.duplicada: obra_por_gb[f.fica] for f in fusoes}
 
     isbns = [
         {"isbn13": isbn, "obra_id": obra_por_gb[int(b.book_id)], "origem": OrigemIsbn.BASE}
@@ -251,8 +309,50 @@ def carregar_base(conn: Connection, pasta: Path) -> ResumoCarga:
     )
     log.info("%d ISBNs e %d tags de Obra", len(isbns), len(linhas_tag))
 
-    n_notas = _gravar_notas(pasta, set(obra_por_gb))
+    n_notas = _gravar_notas(pasta, set(obra_por_gb), fusoes)
     log.info("%d Notas da Base de coleitura em %s", n_notas, pasta / ARQUIVO_NOTAS)
-    return ResumoCarga(
-        obras=len(obra_por_gb), isbns=len(isbns), tags=len(linhas_tag), notas=n_notas
-    )
+    return ResumoCarga(obras=obras_da_base, isbns=len(isbns), tags=len(linhas_tag), notas=n_notas)
+
+
+# Tabelas com (leitor_id, obra_id) único: a linha da duplicada só passa se o Leitor ainda
+# não tiver uma na que fica.
+_UNICAS_POR_LEITOR = ("leitura", "dispensa", "quero_ler")
+
+
+def _fundir_no_banco(conn: Connection, fusao: Fusao, fica: int) -> None:
+    """Funde a Obra da duplicada, se existir de uma carga anterior, na que fica.
+
+    O que é do Leitor (Leituras, Dispensas, Quero ler, Edições, Eventos) e os ISBNs passam
+    para a que fica; o resto (Vizinhos, tags, Gêneros) sai com a Obra, e o próximo
+    `recalcular` refaz os Vizinhos.
+    """
+    duplicada = conn.execute(
+        text("SELECT id FROM obra WHERE goodbooks_book_id = :g"), {"g": fusao.duplicada}
+    ).scalar_one_or_none()
+    if duplicada is not None:
+        ids = {"d": duplicada, "f": fica}
+        for tabela in _UNICAS_POR_LEITOR:
+            conn.execute(
+                text(
+                    f"UPDATE {tabela} t SET obra_id = :f WHERE t.obra_id = :d AND NOT EXISTS ("
+                    f"SELECT 1 FROM {tabela} x WHERE x.leitor_id = t.leitor_id AND x.obra_id = :f)"
+                ),
+                ids,
+            )
+            conn.execute(text(f"DELETE FROM {tabela} WHERE obra_id = :d"), ids)
+        for tabela in ("edicao", "evento", "obra_isbn"):
+            conn.execute(text(f"UPDATE {tabela} SET obra_id = :f WHERE obra_id = :d"), ids)
+        conn.execute(
+            text(
+                "UPDATE obra SET tem_edicao_pt = true WHERE id = :f AND EXISTS ("
+                "SELECT 1 FROM edicao WHERE obra_id = :f AND idioma = 'pt')"
+            ),
+            ids,
+        )
+        conn.execute(text("DELETE FROM obra WHERE id = :d"), ids)
+    if fusao.titulo:
+        # O título de exibição só difere do título quando há Edição em português (§6.2).
+        conn.execute(
+            text("UPDATE obra SET titulo_exibicao = titulo WHERE id = :f AND NOT tem_edicao_pt"),
+            {"f": fica},
+        )

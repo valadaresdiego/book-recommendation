@@ -228,8 +228,10 @@ def test_edicao_em_portugues_vira_o_titulo_de_exibicao_se_nao_houver(
     conexao: Connection, ol: OpenLibrary, duna_aleph: ResultadoBusca
 ) -> None:
     dune = _dune(conexao)
+    assert not linha(conexao, "obra", dune)["tem_edicao_pt"]
     registrar_resolucao(conexao, resolver_obra(conexao, duna_aleph, ol))
     assert linha(conexao, "obra", dune)["titulo_exibicao"] == "Duna"
+    assert linha(conexao, "obra", dune)["tem_edicao_pt"]  # o filtro de idioma (R10)
 
 
 def test_nao_troca_titulo_de_exibicao_que_ja_esta_em_portugues(
