@@ -12,6 +12,7 @@ from recomendador.estante import (
     dispensar,
     mudar_nota,
     remover,
+    salvar_estou_lendo,
     salvar_quero_ler,
 )
 from recomendador.recomendacao import pagina_da_obra, para_voce
@@ -327,3 +328,27 @@ def test_pagina_da_obra_dispensada_ou_em_quero_ler(conexao, catalogo) -> None:
 
 def test_pagina_de_obra_inexistente(conexao, catalogo) -> None:
     assert pagina_da_obra(conexao, 10**9, LEITOR_ID) is None
+
+
+def test_obra_em_estou_lendo_sai_de_para_voce(conexao, catalogo) -> None:
+    """Critério do R13 (SPEC §8.7). A pontuação das outras Sugestões não muda."""
+    obras = catalogo["obras"]
+    for o in obras[:3]:
+        _ler(conexao, o, 5)
+    antes = para_voce(conexao, LEITOR_ID, limite=40)
+    primeira = antes.sugestoes[0].obra_id
+
+    salvar_estou_lendo(conexao, LEITOR_ID, primeira, posicao=1)
+
+    depois = para_voce(conexao, LEITOR_ID, limite=40)
+    assert [(s.obra_id, s.pontuacao) for s in depois.sugestoes] == [
+        (s.obra_id, s.pontuacao) for s in antes.sugestoes[1:]
+    ]
+
+
+def test_pagina_da_obra_em_estou_lendo(conexao, catalogo) -> None:
+    obras = catalogo["obras"]
+    salvar_estou_lendo(conexao, LEITOR_ID, obras[3])
+
+    assert pagina_da_obra(conexao, obras[3], LEITOR_ID).estou_lendo
+    assert not pagina_da_obra(conexao, obras[4], LEITOR_ID).estou_lendo

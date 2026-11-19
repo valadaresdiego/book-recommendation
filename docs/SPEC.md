@@ -162,6 +162,8 @@ evento          id bigserial PK · leitor_id FK · tipo text · obra_id null
 dispensa        leitor_id FK · obra_id FK · criado_em            -- R7; PK (leitor_id, obra_id)
 quero_ler       leitor_id FK · obra_id FK · criado_em            -- R8; PK (leitor_id, obra_id)
                 posicao smallint null   -- posição em "Para você" quando foi salva (O5)
+estou_lendo     leitor_id FK · obra_id FK · criado_em            -- R13; PK (leitor_id, obra_id)
+                posicao smallint null   -- idem; vem de quero_ler quando a Obra passa de lá
 ```
 
 Decisões do modelo:
@@ -171,6 +173,7 @@ Decisões do modelo:
 - O tipo do Vizinho (conteúdo ou coleitura) vem de `execucao_modelo.tipo`.
 - Uma Obra adicionada pelo Leitor recebe Vizinhos de conteúdo na execução de conteúdo **ativa**, com `obra_id` = a Obra nova. Ela nunca tem Vizinhos de coleitura.
 - `dispensa` e `quero_ler` entram na fase 4 (migração 0006, §8.6). Uma Obra fica em no máximo uma das duas: salvar em Quero ler desfaz a Dispensa, e dispensar tira da lista.
+- `estou_lendo` entra na fase 5 (migração 0007, §8.7). A regra passa a valer para as três: uma Obra fica em no máximo uma de `dispensa`, `quero_ler` e `estou_lendo`.
 
 ---
 
@@ -340,6 +343,7 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `montagem_pulada` | `{}` | — (fecha a abertura automática da Montagem) |
 | `sugestao_dispensada` | `{posicao}`, com `posicao` nula fora de "Para você" | O2 (R7) |
 | `quero_ler_salvo` | `{posicao}`, idem | O2 (R8) |
+| `leitura_iniciada` | `{posicao}`, idem; vinda de Quero ler, a posição salva lá | — (R13) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
 
@@ -482,6 +486,18 @@ Decisões do Leitor (19/11/2026): o filtro de idioma usa as Edições em portugu
 - A consulta calcula os contribuintes na CTE das parcelas, com `row_number()` em vez do `DISTINCT ON`.
 - O texto é montado só na UI (§13, LLM nos Motivos). Num popover "Por quê?" do card, cada linha mostra "*{titulo}*, sua nota {nota}: {participacao} %".
 
+### 8.7 Fase 5: Estou lendo (R13)
+
+Decisões do Leitor (19/11/2026, [ADR 0008](adr/0008-estou-lendo-sem-progresso.md)): "Estou lendo" é uma lista, sem página nem percentual; tem página própria; entra por "Para você", Quero ler e a página da Obra; Obra da Estante não entra (sem releitura); a Dispensa tira da lista.
+
+**Domínio** (`recomendador/estante/listas.py`). `estante.salvar_estou_lendo(leitor_id, obra_id, posicao=None)` grava em `estou_lendo`, tira a Obra de Quero ler, desfaz a Dispensa dela e registra `leitura_iniciada`. Uma Obra da Estante levanta `JaNaEstante`. Salvar de novo não duplica e mantém a primeira posição. `estante.tirar_de_estou_lendo(...)` ("Parei de ler") apaga a linha, e `estante.listar_estou_lendo(leitor_id)` devolve a lista, da mais recente para a mais antiga.
+- **Posição (O5).** Sem `posicao`, vale a de `quero_ler`, se a Obra estava lá. Assim uma Obra salva de "Para você", que passou por Quero ler e depois por Estou lendo, ainda entra na Estante com `origem='sugestao'` e registra `ja_li_de_sugestao`.
+- **Exclusão mútua.** `estante.adicionar` ("Já li") tira a Obra de Estou lendo na mesma transação, como já faz com Quero ler. `estante.dispensar` e `estante.salvar_quero_ler` também a tiram (a segunda leva a posição de volta, se não receber outra).
+- **"Para você".** As Obras de Estou lendo saem das candidatas do §8.5, no mesmo `WHERE` final das Dispensas e de Quero ler. `recomendacao.pontuacao` não muda, e o teste de paridade com o SQL também não.
+- **Página da Obra.** `PaginaObra.estou_lendo` diz se a Obra está na lista. Nesse caso a página mostra "Você está lendo este livro." e só os botões "Já li" e "Parei de ler".
+
+**UI.** Página "Estou lendo" no `st.navigation`, antes de Quero ler, com "Já li" e "Parei de ler" em cada item. Vazia: chamada para Quero ler. O botão "Comecei a ler" fica nos cards de "Para você", em cada item de Quero ler e na página da Obra fora da Estante.
+
 ---
 
 ## 9. Avaliação offline
@@ -539,16 +555,17 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 ## 11. UI Streamlit
 
-`st.navigation` com seis páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
+`st.navigation` com sete páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
 
 | Página | Conteúdo | Requisitos |
 |---|---|---|
-| Para você | Filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Não tenho interesse", "Já li"). | R4, R7, R8, R10, R11 |
-| Quero ler | As Obras salvas, com "Já li" e "Tirar da lista". Vazia: chamada para "Para você". | R8 |
+| Para você | Filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Comecei a ler", "Já li", "Não tenho interesse"). | R4, R7, R8, R10, R11, R13 |
+| Estou lendo | As Obras em leitura, com "Já li" e "Parei de ler". Vazia: chamada para Quero ler. | R13 |
+| Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". Vazia: chamada para "Para você". | R8, R13 |
 | Estante | §7.5 | R3 |
 | Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar. Também tem o cadastro manual. | R1, R2 |
 | Montagem da Estante | §7.4 | — |
-| Obra (oculta) | §8.3, com "Quero ler" e "Desfazer" a Dispensa (§8.6) | R5, R7, R8 |
+| Obra (oculta) | §8.3, com "Quero ler", "Comecei a ler" (§8.7) e "Desfazer" a Dispensa (§8.6) | R5, R7, R8, R13 |
 
 - O rodapé traz a atribuição do goodbooks-10k (CC BY-SA 4.0) e da Open Library.
 - Funções de leitura usam `st.cache_data` com TTL curto (30 s). Qualquer escrita limpa o cache (`st.cache_data.clear()`), para que a mudança de Nota apareça na hora (R2).
@@ -562,7 +579,7 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 | Camada | Como | Exemplos |
 |---|---|---|
-| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata; a Obra dispensada não volta; "Já li" tira de Quero ler; o filtro não muda a pontuação nem a ordem; os 3 Contribuintes com a participação |
+| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata; a Obra dispensada não volta; "Já li" tira de Quero ler e de Estou lendo; Estou lendo leva a posição de Quero ler; o filtro não muda a pontuação nem a ordem; os 3 Contribuintes com a participação |
 | Algoritmos | Funções puras com matrizes pequenas feitas à mão | Cosseno ajustado e encolhimento contra um cálculo manual 4×3; top K exclui a própria Obra e respeita o limite por autor; NDCG@20 contra um valor conhecido |
 | Resolução Edição → Obra | Respostas gravadas da OL e do Google Books (JSON em `tests/dados/http/`), via transporte falso do `httpx` | Um caso por regra (1 a 4) do §7.2, incluindo *Duna* (Aleph) → *Dune* |
 | Fixture de Catálogo | ~40 Obras sintéticas, com Vizinhos fixos | Com 5 Notas positivas, `para_voce` devolve ≥ 10 Sugestões (O1) |
@@ -575,7 +592,7 @@ As chamadas reais às APIs externas e à GPU ficam em testes marcados `@pytest.m
 
 ## 13. Pontos de extensão (P1) e restrições (P2)
 
-**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6).
+**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6), e R13 na fase 5 (§8.7).
 
 **P2, o que o desenho não pode impedir:**
 
@@ -598,6 +615,7 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | **2. Parecidos** | Bake-off (ADR 0006), R5 + R5a, R4 com α = 1, avaliação offline | NDCG@20 só com conteúdo > baseline de popularidade; ≥ 80 % das Leituras com R5a preenchido (O4); com 5 Notas, ≥ 10 Sugestões (O1) |
 | **3. Coleitura** | R5b, R4 completo, calibração de α | NDCG@20 combinado ≥ o melhor dos dois isolados; **taxa de correspondência das Leituras com Obras `origem='base'` ≥ 40 %**, senão reabrir a escolha da Base de coleitura (PRD §9); ≥ 40 % das Leituras com R5b preenchido (O4) |
 | **4. Ajustes** | R7, R8, R10, R11 (§8.6), migração 0006, `tem_edicao_pt` no `enriquecer-ol` | Critérios de R7, R8, R10 e R11 do PRD cobertos por teste contra o banco real; o teste de paridade SQL × avaliação inalterado; a consulta do O2 (salvas ÷ (salvas + dispensadas) nas top 10) em `reports/consultas-metricas.sql`; `enriquecer-ol` rodado de novo no banco do app, com a contagem de `tem_edicao_pt` no log |
+| **5. Estou lendo** | R13 (§8.7, ADR 0008), migração 0007, página Estou lendo | Critério do R13 do PRD coberto por teste contra o banco real: entra por "Para você", Quero ler e a página da Obra; sai de Quero ler ao entrar; "Já li" tira da lista e grava `origem='sugestao'` com a posição vinda de Quero ler; não aparece em "Para você"; o teste de paridade SQL × avaliação inalterado |
 
 ---
 

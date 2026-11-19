@@ -5,6 +5,7 @@ from componentes import (
     LEITOR,
     abrir_obra,
     autores_em_texto,
+    comecei_a_ler,
     ja_li,
     mostrar_capa,
     tirar_de_quero_ler,
@@ -43,5 +44,6 @@ for item in itens:
                 abrir_obra(item.obra_id)
             st.caption(f"{autores_em_texto(item.autores)} · guardado em {item.criado_em:%d/%m/%Y}")
         with acoes:
+            comecei_a_ler(item.obra_id, item.titulo, f"ql-{item.obra_id}")
             ja_li(item.obra_id, item.titulo, f"ql-{item.obra_id}")
             tirar_de_quero_ler(item.obra_id, item.titulo, f"ql-{item.obra_id}")

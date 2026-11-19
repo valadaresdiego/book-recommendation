@@ -50,8 +50,12 @@ O conjunto das Leituras de um Leitor.
 _Evite_: biblioteca, coleção, lidos
 
 **Quero ler**:
-A lista das Obras que o Leitor guardou para ler depois, separada da Estante. Uma Obra sai dela quando vira Leitura ("Já li") ou quando o Leitor a tira da lista.
+A lista das Obras que o Leitor guardou para ler depois, separada da Estante. Uma Obra sai dela quando vira Leitura ("Já li"), quando passa para Estou lendo ou quando o Leitor a tira da lista.
 _Evite_: lista de desejos, wishlist, favoritos, "para ler"
+
+**Estou lendo**:
+A lista das Obras que o Leitor começou a ler e ainda não terminou, separada da Estante e de Quero ler. Não guarda página, percentual nem prazo. Uma Obra sai dela quando vira Leitura ("Já li") ou quando o Leitor para de ler.
+_Evite_: lendo agora, em andamento, progresso, leitura atual
 
 **Dispensa**:
 O registro de que o Leitor não tem interesse numa Obra sugerida. A Obra dispensada não volta a "Para você", mas continua no Catálogo e nas seções da página da Obra. O Leitor pode desfazer.

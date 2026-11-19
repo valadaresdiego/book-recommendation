@@ -8,7 +8,7 @@
 
 Escolher a próxima leitura dá trabalho: as listas de "mais vendidos" e os algoritmos das lojas não conhecem o meu histórico, e os que conhecem (Goodreads, Skoob) misturam rede social, controle de leitura e anúncios. Quero um lugar simples onde eu registro o que já li, dou nota, e recebo sugestões que fazem sentido **para o meu gosto**, com o motivo de cada sugestão. Sem isso, continuo escolhendo livro por acaso e acertando menos.
 
-**Isto não é um app de leitura.** Não abre livro, não marca página, não controla progresso. Só registra o que eu li e recomenda o que ler.
+**Isto não é um app de leitura.** Não abre livro, não marca página, não controla progresso. Só registra o que eu li e recomenda o que ler. A lista "Estou lendo" (R13) só diz que comecei uma Obra: não guarda página, percentual nem prazo ([ADR 0008](adr/0008-estou-lendo-sem-progresso.md)).
 
 ## 2. Objetivos
 
@@ -24,7 +24,7 @@ Escolher a próxima leitura dá trabalho: as listas de "mais vendidos" e os algo
 
 | Não vamos fazer | Por quê |
 |-----------------|---------|
-| Leitor de e-book, progresso de leitura, metas anuais | O produto é recomendação, não leitura. Goodreads/Skoob já fazem isso. |
+| Leitor de e-book, progresso de leitura (página, percentual, prazo), metas anuais | O produto é recomendação, não leitura. Goodreads/Skoob já fazem isso. A lista "Estou lendo" (R13) não conta como progresso: é só o estado entre Quero ler e Já li ([ADR 0008](adr/0008-estou-lendo-sem-progresso.md)). |
 | Vários usuários, perfis, rede social, seguir amigos | Só eu uso na v1. Adiciona login, privacidade e moderação sem benefício agora. |
 | Resenhas escritas e comentários | Nota basta para o algoritmo. Texto livre não melhora as sugestões da v1. |
 | Links de compra, preços, afiliados | Não ajuda a decidir *o que* ler; pode virar P2. |
@@ -122,6 +122,7 @@ Persona única: **o leitor** (eu).
 | R8 | **Quero ler**: salvar sugestão numa lista à parte | Lista separada da estante; sai dela quando marco "Já li" |
 | R10 | **Filtros** na lista "Para você" por gênero e idioma | Filtro não recalcula a pontuação, só esconde itens |
 | R11 | **Motivo detalhado**: ver todos os livros lidos que contribuíram para uma sugestão | Lista os 3 maiores contribuintes com peso |
+| R13 | **Estou lendo**: lista das Obras que comecei, sem página nem percentual | Entra por "Para você", Quero ler ou a página do livro; sai de Quero ler ao entrar e sai da lista quando marco "Já li"; não aparece em "Para você" |
 
 ### P2: futuro (projetar para não impedir)
 
@@ -189,5 +190,6 @@ Sem prazo fixo. Cada fase entrega algo usável.
 | 2. Parecidos | Página do livro com "Parecidos com este" e lista "Para você" só com conteúdo | R4 (α = 1), R5, R5a |
 | 3. Coleitura | Base pública carregada; "Quem leu também gostou" e mistura na lista | R5b, R4 completo |
 | 4. Ajustes | Dispensar, quero ler, filtros, motivo detalhado | R7, R8, R10, R11 |
+| 5. Estou lendo | Lista das Obras em leitura, entre Quero ler e Já li | R13 |
 
 **Dependências:** API de catálogo (fase 1); escolha e licença da base pública (fase 3). Como a maioria das leituras é tradução (Q1), a fase 3 continua antes da 4. O risco que resta é a taxa de correspondência edição brasileira → obra original. Se ficar abaixo de 40 % (O4), reavaliar a base (Q2).

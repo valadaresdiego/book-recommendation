@@ -1,7 +1,8 @@
 """Para você (R4, SPEC §8.5 e §11): até 20 Sugestões em cards, cada uma com o Motivo.
 
 Fase 4 (§8.6): filtros por Gênero e por Edição em português (R10), "Por quê?" com os
-Contribuintes (R11), "Quero ler" (R8) e "Não tenho interesse" (R7).
+Contribuintes (R11), "Quero ler" (R8) e "Não tenho interesse" (R7). Fase 5 (§8.7):
+"Comecei a ler" (R13).
 """
 
 import streamlit as st
@@ -9,6 +10,7 @@ from componentes import (
     LEITOR,
     abrir_obra,
     autores_em_texto,
+    comecei_a_ler,
     dispensar,
     ja_li,
     mostrar_capa,
@@ -109,5 +111,6 @@ for inicio in range(0, len(r.sugestoes), COLUNAS):
                 for c in s.contribuintes:
                     st.markdown(texto_do_contribuinte(c))
             quero_ler(s.obra_id, s.titulo_exibicao, f"pv-{s.obra_id}")
+            comecei_a_ler(s.obra_id, s.titulo_exibicao, f"pv-{s.obra_id}")
             ja_li(s.obra_id, s.titulo_exibicao, f"pv-{s.obra_id}")
             dispensar(s.obra_id, s.titulo_exibicao, f"pv-{s.obra_id}")

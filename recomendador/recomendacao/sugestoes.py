@@ -119,6 +119,9 @@ _CONSULTA = text(
       AND NOT EXISTS (
           SELECT 1 FROM quero_ler q WHERE q.leitor_id = :leitor AND q.obra_id = p.candidata
       )
+      AND NOT EXISTS (
+          SELECT 1 FROM estou_lendo el WHERE el.leitor_id = :leitor AND el.obra_id = p.candidata
+      )
       -- R10: os filtros vêm depois da pontuação e antes do limite.
       AND (cardinality(CAST(:generos AS text[])) = 0 OR EXISTS (
           SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
