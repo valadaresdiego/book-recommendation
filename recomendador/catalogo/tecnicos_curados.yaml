@@ -1,0 +1,252 @@
+# Lista curada de Obras técnicas (SPEC §8.8, ADR 0009). Revisada pelo Leitor.
+#
+# Entram mesmo fora do corte por Edições e editora, e mesmo sem assunto técnico.
+# - work: chave da work na Open Library (dump de 2026-11).
+# - titulo e autor: servem só para conferir a chave. A carga falha se o título da work
+#   (com o subtítulo) não começar por este título, sem diferenciar maiúsculas e acentos.
+# - fundir: works duplicadas da mesma Obra na Open Library (outras edições, traduções).
+#   Os ISBNs delas entram na Obra; as works em si não viram Obras.
+#
+# Ficaram de fora porque já estão na Base de coleitura: The Pragmatic Programmer,
+# The Phoenix Project, Don't Make Me Think e The Design of Everyday Things.
+
+# Engenharia de software
+- work: /works/OL17618370W
+  titulo: Clean Code
+  autor: Robert C. Martin
+  fundir: [/works/OL44556550W]
+- work: /works/OL19809141W
+  titulo: Clean Architecture
+  autor: Robert C. Martin
+  fundir: [/works/OL29252668W]
+- work: /works/OL16298147W
+  titulo: The Clean Coder
+  autor: Robert C. Martin
+- work: /works/OL25790348W
+  titulo: Refactoring
+  autor: Martin Fowler
+  fundir: [/works/OL16551230W, /works/OL17820325W, /works/OL18146365W, /works/OL24144517W]
+- work: /works/OL6030812W
+  titulo: Design Patterns
+  autor: Erich Gamma
+  fundir: [/works/OL21371192W, /works/OL21406710W, /works/OL29342271W, /works/OL31219436W]
+- work: /works/OL16942701W
+  titulo: Head First Design Patterns
+  autor: Eric Freeman
+  fundir: [/works/OL43761511W]
+- work: /works/OL2722063W
+  titulo: Code Complete
+  autor: Steve McConnell
+  fundir: [/works/OL28605828W, /works/OL34013371W]
+- work: /works/OL3510570W
+  titulo: The Mythical Man-Month
+  autor: Frederick P. Brooks
+- work: /works/OL5742702W
+  titulo: Working Effectively with Legacy Code
+  autor: Michael C. Feathers
+- work: /works/OL1961692W
+  titulo: Test-Driven Development
+  autor: Kent Beck
+- work: /works/OL1961693W
+  titulo: Extreme Programming Explained
+  autor: Kent Beck
+- work: /works/OL26343241W
+  titulo: Growing Object-Oriented Software, Guided by Tests
+  autor: Steve Freeman
+  fundir: [/works/OL16955281W, /works/OL13856561W]
+- work: /works/OL4464385W
+  titulo: Domain-Driven Design
+  autor: Eric Evans
+  fundir: [/works/OL25370128W, /works/OL35118698W]
+- work: /works/OL21221785W
+  titulo: A Philosophy of Software Design
+  autor: John K. Ousterhout
+- work: /works/OL22293580W
+  titulo: Software Engineering at Google
+  autor: Titus Winters
+- work: /works/OL6223299W
+  titulo: Effective Java
+  autor: Joshua Bloch
+  fundir: [/works/OL25783599W, /works/OL29354670W, /works/OL31570450W, /works/OL34693872W]
+- work: /works/OL39109952W
+  titulo: Structure and Interpretation of Computer Programs
+  autor: Harold Abelson
+- work: /works/OL257263W
+  titulo: The Art of Computer Programming
+  autor: Donald Knuth
+- work: /works/OL4781294W
+  titulo: Introduction to Algorithms
+  autor: Thomas H. Cormen
+  fundir: [/works/OL31327254W, /works/OL36771409W, /works/OL43831378W, /works/OL44032030W]
+- work: /works/OL4617640W
+  titulo: The C Programming Language
+  autor: Brian W. Kernighan
+  fundir: [/works/OL43090196W]
+- work: /works/OL25919119W
+  titulo: Grokking Algorithms
+  autor: Aditya Y. Bhargava
+  fundir: [/works/OL37769525W, /works/OL19546865W]
+- work: /works/OL16816263W
+  titulo: Cracking the Coding Interview
+  autor: Gayle Laakmann McDowell
+- work: /works/OL1972516W
+  titulo: Code
+  autor: Charles Petzold
+- work: /works/OL12343250W
+  titulo: Computer Systems
+  autor: Randal E. Bryant
+  fundir: [/works/OL7952623W, /works/OL15452998W, /works/OL18803061W, /works/OL19545341W,
+           /works/OL21451439W, /works/OL21513831W, /works/OL21927151W, /works/OL31265290W]
+- work: /works/OL21738416W
+  titulo: Operating Systems
+  autor: Remzi H. Arpaci-Dusseau
+
+# Arquitetura, dados e DevOps
+- work: /works/OL19293745W
+  titulo: Designing Data-Intensive Applications
+  autor: Martin Kleppmann
+- work: /works/OL463952W
+  titulo: Patterns of Enterprise Application Architecture
+  autor: Martin Fowler
+  fundir: [/works/OL37443238W, /works/OL26343217W]
+- work: /works/OL6030059W
+  titulo: Enterprise Integration Patterns
+  autor: Gregor Hohpe
+  fundir: [/works/OL42837707W]
+- work: /works/OL19547194W
+  titulo: Building Microservices
+  autor: Sam Newman
+- work: /works/OL8848832W
+  titulo: Release It!
+  autor: Michael T. Nygard
+- work: /works/OL20872782W
+  titulo: Fundamentals of Software Architecture
+  autor: Mark Richards
+- work: /works/OL20028554W
+  titulo: Site Reliability Engineering
+  autor: Betsy Beyer
+- work: /works/OL16420058W
+  titulo: Continuous Delivery
+  autor: Jez Humble
+- work: /works/OL19730495W
+  titulo: The DevOps Handbook
+  autor: Gene Kim
+  fundir: [/works/OL25476761W, /works/OL27107459W, /works/OL27842137W]
+- work: /works/OL19542983W
+  titulo: Accelerate
+  autor: Nicole Forsgren
+  fundir: [/works/OL26841000W, /works/OL27114211W, /works/OL27833846W, /works/OL27842135W]
+- work: /works/OL20716769W
+  titulo: The Unicorn Project
+  autor: Gene Kim
+- work: /works/OL21232655W
+  titulo: Team Topologies
+  autor: Matthew Skelton
+  fundir: [/works/OL42568688W]
+- work: /works/OL21360140W
+  titulo: Database Internals
+  autor: Alex Petrov
+- work: /works/OL21364155W
+  titulo: Kubernetes
+  autor: Brendan Burns
+  fundir: [/works/OL19543296W]
+
+# Linguagens
+- work: /works/OL19932156W
+  titulo: Fluent Python
+  autor: Luciano Ramalho
+- work: /works/OL17920482W
+  titulo: Python Crash Course
+  autor: Eric Matthes
+  fundir: [/works/OL20155144W, /works/OL28018702W]
+- work: /works/OL17192141W
+  titulo: Automate the Boring Stuff with Python
+  autor: Al Sweigart
+- work: /works/OL15444205W
+  titulo: Eloquent JavaScript
+  autor: Marijn Haverbeke
+- work: /works/OL9486352W
+  titulo: JavaScript The Good Parts
+  autor: Douglas Crockford
+- work: /works/OL19080231W
+  titulo: The Rust Programming Language
+  autor: Steve Klabnik
+  fundir: [/works/OL34324728W]
+- work: /works/OL17348524W
+  titulo: The Go Programming Language
+  autor: Alan A. A. Donovan
+  fundir: [/works/OL43675494W]
+- work: /works/OL24950880W
+  titulo: Learning Go
+  autor: Jon Bodner
+
+# Dados e ML
+- work: /works/OL20709638W
+  titulo: Hands-On Machine Learning with Scikit-Learn
+  autor: Aurélien Géron
+  fundir: [/works/OL19543288W, /works/OL19544026W, /works/OL37483061W]
+- work: /works/OL44325799W
+  titulo: Hands-On Machine Learning with Scikit-Learn and PyTorch
+  autor: Aurélien Géron
+- work: /works/OL17801809W
+  titulo: Deep Learning
+  autor: Ian Goodfellow
+  fundir: [/works/OL31374070W]
+- work: /works/OL17422847W
+  titulo: Python for Data Analysis
+  autor: Wes McKinney
+- work: /works/OL4147338W
+  titulo: The Elements of Statistical Learning
+  autor: Trevor Hastie
+- work: /works/OL2963587W
+  titulo: Pattern Recognition and Machine Learning
+  autor: Christopher M. Bishop
+  fundir: [/works/OL20728101W]
+- work: /works/OL2896994W
+  titulo: Artificial Intelligence
+  autor: Stuart Russell
+- work: /works/OL26768541W
+  titulo: Designing Machine Learning Systems
+  autor: Chip Huyen
+- work: /works/OL39671094W
+  titulo: AI Engineering
+  autor: Chip Huyen
+- work: /works/OL20006690W
+  titulo: Data Science from Scratch
+  autor: Joel Grus
+- work: /works/OL17659741W
+  titulo: Storytelling with Data
+  autor: Cole Nussbaumer Knaflic
+
+# UX, produto e gestão
+- work: /works/OL16795238W
+  titulo: About Face
+  autor: Alan Cooper
+  fundir: [/works/OL3921086W, /works/OL19332786W, /works/OL15179892W, /works/OL17918918W,
+           /works/OL18452148W, /works/OL28997004W]
+- work: /works/OL16803591W
+  titulo: Inspired
+  autor: Marty Cagan
+- work: /works/OL45274300W
+  titulo: Sprint
+  autor: Jake Knapp
+- work: /works/OL19992071W
+  titulo: Hooked
+  autor: Nir Eyal
+  fundir: [/works/OL19361622W, /works/OL19976003W, /works/OL20718693W]
+- work: /works/OL38240W
+  titulo: Peopleware
+  autor: Tom DeMarco
+  fundir: [/works/OL19982247W, /works/OL25384971W]
+- work: /works/OL19860807W
+  titulo: The Manager's Path
+  autor: Camille Fournier
+- work: /works/OL20641522W
+  titulo: An Elegant Puzzle
+  autor: Will Larson
+- work: /works/OL24199831W
+  titulo: Staff Engineer
+  autor: Will Larson
+- work: /works/OL27277363W
+  titulo: Shape Up
+  autor: Ryan Singer

@@ -38,19 +38,24 @@ ORDER BY 1;
 -- Salvas em Quero ler ÷ (salvas + dispensadas), contando cada Obra uma vez, pela última
 -- reação dela enquanto estava nas top 10 (SPEC §8.6). Vale também quando a reação veio da
 -- página da Obra aberta a partir de "Para você", que guarda a posição.
+-- Uma linha por lista (SPEC §8.8): `geral` e `tecnologia`. Os eventos de antes da fase 6
+-- não têm o campo e contam como `geral`.
 WITH reacoes AS (
-    SELECT DISTINCT ON (obra_id) obra_id, tipo
+    SELECT DISTINCT ON (obra_id) obra_id, tipo, coalesce(dados ->> 'lista', 'geral') AS lista
     FROM evento
     WHERE leitor_id = :leitor
       AND tipo IN ('quero_ler_salvo', 'sugestao_dispensada')
       AND (dados ->> 'posicao')::int <= 10
     ORDER BY obra_id, criado_em DESC, id DESC
 )
-SELECT count(*) FILTER (WHERE tipo = 'quero_ler_salvo') AS salvas,
+SELECT lista,
+       count(*) FILTER (WHERE tipo = 'quero_ler_salvo') AS salvas,
        count(*) FILTER (WHERE tipo = 'sugestao_dispensada') AS dispensadas,
        round(100.0 * count(*) FILTER (WHERE tipo = 'quero_ler_salvo') / nullif(count(*), 0), 1)
            AS pct_aceite
-FROM reacoes;
+FROM reacoes
+GROUP BY lista
+ORDER BY lista;
 
 -- O2, complemento: interesse nas top 10 exibidas, medido por quanto o Leitor abriu ou
 -- marcou como "Já li".

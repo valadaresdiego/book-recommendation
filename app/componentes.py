@@ -305,13 +305,20 @@ def posicao_da_sugestao(obra_id: int) -> int | None:
     return st.session_state.get("posicao-da-sugestao", {}).get(obra_id)
 
 
+def lista_da_sugestao(obra_id: int) -> str | None:
+    """A lista de "Para você" (`geral` ou `tecnologia`) de onde a Obra veio (O2, §8.8)."""
+    return st.session_state.get("lista-da-sugestao", {}).get(obra_id)
+
+
 def quero_ler(obra_id: int, titulo: str, chave: str) -> None:
     """O botão "Quero ler" (R8): guarda a Obra na lista e a tira de "Para você"."""
     if not st.button("Quero ler", key=f"{chave}-quero", icon="🔖", use_container_width=True):
         return
     try:
         with estante.transacao() as conn:
-            estante.salvar_quero_ler(conn, LEITOR, obra_id, posicao_da_sugestao(obra_id))
+            estante.salvar_quero_ler(
+                conn, LEITOR, obra_id, posicao_da_sugestao(obra_id), lista_da_sugestao(obra_id)
+            )
     except estante.JaNaEstante as e:
         st.warning(str(e), icon="📚")
         return
@@ -360,7 +367,9 @@ def dispensar(obra_id: int, titulo: str, chave: str) -> None:
     if not st.button("Não tenho interesse", key=f"{chave}-dispensar", type="tertiary"):
         return
     with estante.transacao() as conn:
-        estante.dispensar(conn, LEITOR, obra_id, posicao_da_sugestao(obra_id))
+        estante.dispensar(
+            conn, LEITOR, obra_id, posicao_da_sugestao(obra_id), lista_da_sugestao(obra_id)
+        )
     depois_de_gravar()
     st.toast(f"{titulo} não volta mais a Para você.")
     st.rerun()

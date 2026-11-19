@@ -1,0 +1,21 @@
+# Editoras técnicas (SPEC §8.8): uma expressão regular por linha, sem diferenciar maiúsculas,
+# buscada no campo `publishers` das Edições da Open Library.
+o'?reilly
+packt
+manning
+pragmatic
+no starch
+addison
+apress
+microsoft press
+prentice
+pearson
+mit press
+morgan kaufmann
+sams
+wrox
+sitepoint
+alta books
+novatec
+casa do c[oó]digo
+bookman

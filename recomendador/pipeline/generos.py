@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA
+
 log = logging.getLogger(__name__)
 
 # Uma Obra pertence ao Gênero se as tags dele somam ao menos 5 % das tags úteis da Obra.
@@ -28,6 +30,27 @@ _MAPEAR = text(
     SELECT g.obra_id, g.genero_id, g.soma::double precision / t.soma
     FROM por_genero g JOIN total t USING (obra_id)
     WHERE g.soma::double precision / t.soma >= :minima
+    ON CONFLICT DO NOTHING
+    """
+)
+
+_APAGAR = text(
+    """
+    DELETE FROM obra_genero og
+    WHERE NOT EXISTS (
+        SELECT 1 FROM obra o, genero g
+        WHERE o.id = og.obra_id AND g.id = og.genero_id
+          AND o.origem <> 'base' AND g.slug = :tecnologia
+    )
+    """
+)
+
+_SEM_BIOGRAFIAS = text(
+    """
+    DELETE FROM obra_genero og
+    USING genero t, obra_genero ob, genero b
+    WHERE t.id = og.genero_id AND t.slug = :tecnologia
+      AND ob.obra_id = og.obra_id AND b.id = ob.genero_id AND b.slug = :biografias
     """
 )
 
@@ -44,9 +67,15 @@ class ResumoGeneros:
 
 
 def mapear_generos(conn: Connection) -> ResumoGeneros:
-    """Recalcula `obra_genero` inteira a partir de `obra_tag` e `genero_tag`."""
-    conn.execute(text("DELETE FROM obra_genero"))
+    """Recalcula `obra_genero` a partir de `obra_tag` e `genero_tag`.
+
+    A Tecnologia das Obras que não são da Base fica: o `carregar-tecnicas` a grava com
+    força 1 pelos assuntos da Open Library, que têm contagem 0 e não a refariam (§8.8).
+    Uma Obra de Biografias e memórias sai de Tecnologia (§6.3).
+    """
+    conn.execute(_APAGAR, {"tecnologia": SLUG_TECNOLOGIA})
     conn.execute(_MAPEAR, {"minima": FORCA_MINIMA})
+    conn.execute(_SEM_BIOGRAFIAS, {"tecnologia": SLUG_TECNOLOGIA, "biografias": SLUG_BIOGRAFIAS})
 
     obras = conn.execute(text("SELECT count(*) FROM obra")).scalar_one()
     com_genero = conn.execute(text("SELECT count(DISTINCT obra_id) FROM obra_genero")).scalar_one()

@@ -1,0 +1,52 @@
+# Critério de Obra técnica nos dumps da Open Library (SPEC §8.8, ADR 0009).
+#
+# Uma work é técnica se algum dos seus `subjects`, em minúsculas e com espaços simples,
+# for igual a um item de `iguais`, começar por um item de `prefixos` ou terminar por um
+# item de `sufixos`. Medido em 19/11/2026: ~94 mil works.
+iguais:
+  - computer programming
+  - programming
+  - software engineering
+  - computer software
+  - computer science
+  - machine learning
+  - database management
+  - database design
+  - relational databases
+  - web site development
+  - web site design
+  - web sites -- design
+  - object-oriented programming (computer science)
+  - user interfaces (computer systems)
+  - agile software development
+  - devops
+  - software architecture
+  - data mining
+  - artificial intelligence
+  - computer programming, programs, data
+  - programming languages (electronic computers)
+  - software engineering -- management
+  - computer software -- development
+prefixos:
+  - computer programming
+  - software engineering
+  - machine learning
+  - database management
+  - artificial intelligence
+  - data mining
+  - agile software development
+  - software architecture
+  - web site development
+  - computer science
+  - "programming --"
+  - "programming ("
+  - user interfaces (computer systems)
+  - object-oriented programming
+sufixos:
+  - (computer program language)
+
+# Saem do corte (a lista curada não passa por aqui): ficção com assunto técnico
+# (Ender's Game, I, Robot), anais de congresso e séries acadêmicas.
+ruido_assuntos: [fiction, novel, juvenile, congresses, conference, proceedings]
+ruido_titulos: [proceedings, transactions on, lecture notes, advances in, conference,
+                symposium, workshop]

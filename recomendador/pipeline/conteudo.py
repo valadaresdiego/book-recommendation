@@ -37,26 +37,41 @@ class ResumoConteudo:
 
 
 def top_vizinhos(
-    e: np.ndarray, autores: list[str | None], k: int = K, max_mesmo_autor: int = MAX_MESMO_AUTOR
+    e: np.ndarray,
+    autores: list[str | None],
+    k: int = K,
+    max_mesmo_autor: int = MAX_MESMO_AUTOR,
+    colunas: np.ndarray | None = None,
 ) -> list[list[tuple[int, float]]]:
     """Os `k` vizinhos de cada linha de `e` (norma 1) por cosseno, do mais parecido ao menos.
 
     Exclui a própria Obra e aceita no máximo `max_mesmo_autor` Obras do mesmo autor dela
     (senão uma série domina a lista). `autores[i]` é o primeiro autor normalizado.
+    `colunas` (índices de `e`) restringe quem pode ser vizinho: as Obras técnicas na
+    execução `tecnico`, as que não vêm da Open Library na de conteúdo (SPEC §8.2, §8.8).
+    Os índices devolvidos são sempre de `e`.
     """
     n = len(e)
-    folga = min(n, 3 * k + 1)
+    mapa = np.arange(n) if colunas is None else np.asarray(colunas, dtype=np.int64)
+    alvo = e if colunas is None else e[mapa]
+    folga = min(len(mapa), 3 * k + 1)
     saida: list[list[tuple[int, float]]] = []
     for inicio in range(0, n, _BLOCO):
-        sims = e[inicio : inicio + _BLOCO] @ e.T
+        sims = e[inicio : inicio + _BLOCO] @ alvo.T
         for desloc, linha in enumerate(sims):
             i = inicio + desloc
-            saida.append(_escolher(i, linha, autores, k, max_mesmo_autor, folga))
+            saida.append(_escolher(i, linha, mapa, autores, k, max_mesmo_autor, folga))
     return saida
 
 
 def _escolher(
-    i: int, linha: np.ndarray, autores: list[str | None], k: int, max_autor: int, folga: int
+    i: int,
+    linha: np.ndarray,
+    mapa: np.ndarray,
+    autores: list[str | None],
+    k: int,
+    max_autor: int,
+    folga: int,
 ) -> list[tuple[int, float]]:
     candidatos = np.argpartition(-linha, folga - 1)[:folga] if folga < len(linha) else None
     while True:
@@ -67,14 +82,15 @@ def _escolher(
         )
         escolhidos: list[tuple[int, float]] = []
         do_autor = 0
-        for j in ordem:
+        for c in ordem:
+            j = int(mapa[c])
             if j == i:
                 continue
             if autores[i] is not None and autores[j] == autores[i]:
                 if do_autor >= max_autor:
                     continue
                 do_autor += 1
-            escolhidos.append((int(j), float(linha[j])))
+            escolhidos.append((j, float(linha[c])))
             if len(escolhidos) == k:
                 return escolhidos
         if candidatos is None:  # já olhou a linha inteira
@@ -98,7 +114,11 @@ def calcular_conteudo(
     log.info("  %.0f s (%.1f Obras/s)", segundos, len(ids) / max(segundos, 1e-9))
 
     autores = [normalizar(dados[i].autores[0]) or None if dados[i].autores else None for i in ids]
-    vizinhos = top_vizinhos(e, autores, k, max_mesmo_autor)
+    # As Obras técnicas da Open Library têm embedding, mas não são Vizinho de conteúdo: só
+    # a execução `tecnico` as sugere (SPEC §8.2, §8.8, ADR 0009).
+    da_ol = set(conn.execute(text("SELECT id FROM obra WHERE origem = 'open_library'")).scalars())
+    colunas = np.array([i for i, o in enumerate(ids) if o not in da_ol], dtype=np.int64)
+    vizinhos = top_vizinhos(e, autores, k, max_mesmo_autor, colunas if da_ol else None)
 
     parametros = {
         "k": k,

@@ -104,6 +104,26 @@ def mapear_generos() -> None:
         mapear(conn)
 
 
+@app.command("carregar-tecnicas")
+def carregar_tecnicas(
+    dumps: Annotated[
+        Path, typer.Option(help="Pasta com os dumps works, editions e authors.")
+    ] = Path("data/ol"),
+) -> None:
+    """Carrega as Obras técnicas da Open Library (SPEC §8.8). Rode depois do `enriquecer-ol`
+    e do `mapear-generos`, e em seguida o `calcular-tecnico`."""
+    from recomendador.pipeline.enriquecimento_ol import DumpAusente
+    from recomendador.pipeline.tecnicas import CuradaInvalida
+    from recomendador.pipeline.tecnicas import carregar_tecnicas as carregar
+
+    try:
+        with _engine().begin() as conn:
+            carregar(conn, dumps)
+    except (DumpAusente, CuradaInvalida) as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=1) from e
+
+
 def _pasta_embeddings() -> Path:
     from recomendador.config import config
 
@@ -122,6 +142,27 @@ def calcular_conteudo(
     with _engine().begin() as conn:
         r = calcular(conn, codificador, _pasta_embeddings())
     typer.echo(f"Execução {r.execucao_id} criada (inativa): {r.obras} Obras, {r.vizinhos} Vizinhos")
+
+
+@app.command("calcular-tecnico")
+def calcular_tecnico() -> None:
+    """Embeddings das Obras técnicas que faltam e Vizinhos técnicos, numa execução que já
+    entra ativa (SPEC §8.8). Usa o modelo da execução de conteúdo ativa."""
+    from recomendador.pipeline.tecnico import calcular_tecnico as calcular
+    from recomendador.recomendacao.interativo import carregar_codificador, modelo_de_conteudo_ativo
+
+    with _engine().begin() as conn:
+        modelo = modelo_de_conteudo_ativo(conn)
+    if modelo is None:
+        typer.echo("Não há execução de conteúdo ativa", err=True)
+        raise typer.Exit(code=1)
+    cod = carregar_codificador(modelo)
+    with _engine().begin() as conn:
+        r = calcular(conn, cod)
+    typer.echo(
+        f"Execução {r.execucao_id} (tecnico, ativa): {r.vizinhos} Vizinhos de {r.obras} Obras "
+        f"entre {r.tecnicas} Obras técnicas; {r.embeddings_novos} embeddings novos"
+    )
 
 
 @app.command("bakeoff")
@@ -312,8 +353,15 @@ def recalcular(
     from recomendador.pipeline.execucoes import ativar as ativar_execucao
 
     with _engine().begin() as conn:
+        # A execução `tecnico` não tem avaliação offline (ADR 0009): o `ativar` do conteúdo
+        # novo a refaz.
         ativas = dict(
-            conn.execute(text("SELECT tipo::text, id FROM execucao_modelo WHERE ativa")).all()
+            conn.execute(
+                text(
+                    "SELECT tipo::text, id FROM execucao_modelo "
+                    "WHERE ativa AND tipo IN ('conteudo', 'coleitura')"
+                )
+            ).all()
         )
         if modelo is None and "conteudo" in ativas:
             modelo = conn.execute(

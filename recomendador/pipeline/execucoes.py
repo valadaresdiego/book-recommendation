@@ -25,7 +25,9 @@ def ativar(
     Sem `forcar`, só ativa se a execução foi avaliada e o NDCG@20 dela é ≥ ao da ativa do
     mesmo tipo. Numa execução de conteúdo, os embeddings dela passam para `obra.embedding`;
     as Obras que ela não cobre (adicionadas depois do cálculo) ficam sem embedding, à espera
-    do passo 2 do `atualizar` (SPEC §10).
+    do passo 2 do `atualizar` (SPEC §10). Em seguida os Vizinhos técnicos são refeitos com
+    os embeddings novos (`calcular-tecnico`, §8.8). Uma execução `tecnico` não tem
+    avaliação offline (ADR 0009) e é ativada sem o critério do §9.4.
     """
     execucao = conn.execute(
         text("SELECT tipo::text AS tipo, metricas, ativa FROM execucao_modelo WHERE id = :e"),
@@ -36,7 +38,7 @@ def ativar(
     if execucao.ativa:
         log.info("Execução %d já é a ativa", execucao_id)
         return
-    if not forcar:
+    if not forcar and execucao.tipo != "tecnico":
         _conferir_metricas(conn, execucao_id, execucao.tipo, execucao.metricas)
 
     conn.execute(
@@ -44,9 +46,12 @@ def ativar(
         {"t": execucao.tipo},
     )
     conn.execute(text("UPDATE execucao_modelo SET ativa = true WHERE id = :e"), {"e": execucao_id})
+    log.info("Execução %d (%s) ativada", execucao_id, execucao.tipo)
     if execucao.tipo == "conteudo":
         _copiar_embeddings(conn, execucao_id, pasta_embeddings)
-    log.info("Execução %d (%s) ativada", execucao_id, execucao.tipo)
+        from recomendador.pipeline.tecnico import calcular_tecnico
+
+        calcular_tecnico(conn)
 
 
 def _conferir_metricas(conn: Connection, execucao_id: int, tipo: str, metricas: dict | None):

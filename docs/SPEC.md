@@ -1,6 +1,6 @@
 # SPEC: Recomendador de Livros (v1, local)
 
-> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 4 (o P0 e o P1 do PRD)
+> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 6 (o P0 e o P1 do PRD)
 >
 > **Leia antes:** [PRD](PRD.md) (o quê e por quê) · [GLOSSARY](../GLOSSARY.md) (termos; esta SPEC usa só eles) · [ADRs](adr/) (decisões difíceis de reverter) · pesquisas em [research/](research/)
 
@@ -12,7 +12,7 @@ Esta SPEC diz **como** construir o que o PRD pede. Ela não repete objetivos nem
 
 | Entra (detalhado) | Entra só como ponto de extensão | Entra só como restrição |
 |---|---|---|
-| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura), fase 4 (Ajustes: R7 dispensar, R8 quero ler, R10 filtros, R11 Motivo detalhado, §8.6) | — | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar histórico (§13) |
+| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura), fase 4 (Ajustes: R7 dispensar, R8 quero ler, R10 filtros, R11 Motivo detalhado, §8.6), fase 5 (R13 Estou lendo, §8.7), fase 6 (R14 Obras técnicas e aba "Tecnologia", §8.8) | — | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar histórico (§13) |
 
 Mudanças em relação ao PRD original, registradas nos ADRs e já incorporadas no PRD:
 
@@ -114,10 +114,14 @@ obra            id bigserial PK
                 descricao text null
                 idioma_original text null
                 capa_url text null
-                origem enum('base','leitor')    -- 'base' = veio da Base de coleitura
+                origem enum('base','leitor','open_library')
+                                                -- 'base' = veio da Base de coleitura;
+                                                -- 'open_library' = Obra técnica dos dumps (§8.8)
                 goodbooks_book_id int null UNIQUE
                 ol_work_key text null UNIQUE    -- ex.: /works/OL893415W
                 popularidade int default 0      -- nº de Notas na Base de coleitura
+                edicoes_ol int null             -- nº de Edições no dump da OL (só 'open_library', §8.8)
+                curada bool default false       -- veio da lista curada de Obras técnicas (§8.8)
                 tem_edicao_pt bool default false -- alguma Edição em português conhecida (§6.2, §7.2)
                 embedding vector(1024) null     -- dimensão comum do bake-off (§8.4.1)
                 embedding_execucao_id FK null
@@ -146,7 +150,7 @@ leitura         id bigserial PK · leitor_id FK · obra_id FK · edicao_id FK nu
                 criado_em · atualizado_em
                 UNIQUE (leitor_id, obra_id)       -- deduplicação de R1 (mesma Obra)
 
-execucao_modelo id bigserial PK · tipo enum('conteudo','coleitura')
+execucao_modelo id bigserial PK · tipo enum('conteudo','coleitura','tecnico')
                 modelo text · parametros jsonb · metricas jsonb null
                 ativa bool · criado_em
                 -- no máximo uma ativa por tipo (índice único parcial)
@@ -174,6 +178,7 @@ Decisões do modelo:
 - Uma Obra adicionada pelo Leitor recebe Vizinhos de conteúdo na execução de conteúdo **ativa**, com `obra_id` = a Obra nova. Ela nunca tem Vizinhos de coleitura.
 - `dispensa` e `quero_ler` entram na fase 4 (migração 0006, §8.6). Uma Obra fica em no máximo uma das duas: salvar em Quero ler desfaz a Dispensa, e dispensar tira da lista.
 - `estou_lendo` entra na fase 5 (migração 0007, §8.7). A regra passa a valer para as três: uma Obra fica em no máximo uma de `dispensa`, `quero_ler` e `estou_lendo`.
+- A fase 6 (migração 0008, §8.8, ADR 0009) acrescenta `origem='open_library'`, `edicoes_ol`, `curada` e o tipo de execução `tecnico`. Uma execução `tecnico` liga cada Obra do Catálogo às Obras técnicas mais parecidas e alimenta só a aba "Tecnologia" e os "Parecidos" das Obras técnicas.
 
 ---
 
@@ -182,7 +187,7 @@ Decisões do modelo:
 | Fonte | Uso | Como | Limites e cuidados |
 |---|---|---|---|
 | goodbooks-10k | Base de coleitura e semente do Catálogo (ADR 0003) | Download único dos Releases do GitHub para `data/raw/`. Arquivos: `books.csv`, `ratings.csv`, `tags.csv`, `book_tags.csv`. | CC BY-SA 4.0: citar a fonte no rodapé do app |
-| Open Library (dumps) | Enriquecer as Obras do Catálogo: descrição, assuntos, ISBNs de todas as Edições e título em português | Dumps `works`, `editions` e `authors` em `data/ol/`, processados em streaming (§6.2) | ~12 GB no total. Atualizar no máximo a cada poucos meses, por comando manual. |
+| Open Library (dumps) | Enriquecer as Obras do Catálogo: descrição, assuntos, ISBNs de todas as Edições e título em português. Desde a fase 6, também a origem das Obras técnicas (§8.8, ADR 0009) | Dumps `works`, `editions` e `authors` em `data/ol/`, processados em streaming (§6.2, §8.8) | ~12 GB no total. Atualizar no máximo a cada poucos meses, por comando manual. |
 | Open Library (API) | Resolver a Edição escolhida na busca e enriquecer as Obras adicionadas pelo Leitor | `/isbn/{isbn}.json`, `/works/{key}.json`, com `User-Agent` identificado | Máx. 1 req/s, garantido por um limitador no cliente. Usar só para o volume de um Leitor. |
 | Google Books | Busca do R1 | `GET /books/v1/volumes?q=…&maxResults=20&printType=books&key=…` | Cache só durante a sessão (TTL de 1 h, `st.cache_data`). O que é persistido em `edicao` e `obra` vem de preferência da Open Library, e a capa entra por URL (ver research/fontes-de-dados.md). |
 
@@ -204,7 +209,9 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 | `bakeoff` | §8.4. `calcular-conteudo` de cada finalista, teste entre idiomas, tempo de uma Obra e `avaliar` de todos. Não ativa nada. | Cria execuções novas |
 | `calcular-coleitura [--k 20 --lambda 10 --min-coleitores 5]` | §8.1. Cria uma execução de coleitura **inativa**. | Cria uma execução nova |
 | `avaliar <execucao_id>… [--sem-varredura]` | §9. Grava `metricas` e escreve `reports/avaliacao-AAAA-MM-DD.md`. Com uma execução de conteúdo e uma de coleitura, avalia também as duas juntas e faz a varredura do §9.4 (grade completa em `reports/varredura-AAAA-MM-DD.csv`). | Sim |
-| `ativar <execucao_id> [--forcar]` | Torna a execução ativa e desativa a anterior do mesmo tipo, se passar no critério do §9.4. Numa de conteúdo, copia os embeddings dela para `obra.embedding`. | Sim |
+| `ativar <execucao_id> [--forcar]` | Torna a execução ativa e desativa a anterior do mesmo tipo, se passar no critério do §9.4. Numa de conteúdo, copia os embeddings dela para `obra.embedding` e roda o `calcular-tecnico`, porque os Vizinhos técnicos dependem desses embeddings (§8.8). | Sim |
+| `carregar-tecnicas --dumps data/ol` | §8.8. Carrega as Obras técnicas da Open Library (`origem='open_library'`). Roda depois do `enriquecer-ol` e do `mapear-generos`. | Sim (upsert por `ol_work_key`) |
+| `calcular-tecnico` | §8.8. Gera os embeddings que faltam com o modelo da execução de conteúdo ativa e cria uma execução `tecnico`, que já entra **ativa**. | Cria uma execução nova |
 | `recalcular [--modelo X] [--sem-conteudo]` | `calcular-conteudo` (com o modelo da execução ativa) + `calcular-coleitura` + `avaliar` das novas junto com as ativas + `ativar` de cada nova que passar no critério do §9.4. `--sem-conteudo` pula o passo da GPU. | n/a |
 | `atualizar` | Rotina de abertura do app (§10) | Sim |
 
@@ -260,8 +267,12 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
 | Filosofia e religião | philosophy, religion, spirituality |
 | Poesia | poetry |
 | Quadrinhos | graphic-novels, comics, manga |
+| Tecnologia (fase 6, §8.8) | programming, computer-science, computers, software, software-engineering, web-design, ux |
 
 `obra_genero.forca` = soma das `contagem` das tags do Gênero na Obra ÷ soma de todas as `contagem` úteis da Obra. Uma Obra pertence ao Gênero se `forca ≥ 0,05`.
+
+- **Tecnologia** usa só tags estritas. `technology` e `tech` ficam de fora, porque marcam livros *sobre* tecnologia (*Steve Jobs*). Uma Obra que também é de "Biografias e memórias" sai de Tecnologia (*Ghost in the Wires*). Com essas regras, entram 4 Obras da Base: *The Pragmatic Programmer*, *Don't Make Me Think*, *The Phoenix Project* e *The Design of Everyday Things*.
+- As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`. Os assuntos delas têm `contagem = 0`, então o `mapear-generos` não mexe nas linhas delas.
 
 ---
 
@@ -302,7 +313,7 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 `estante.adicionar(leitor_id, obra_id, nota, edicao_id=None, origem) -> Leitura`:
 
 - Respeita `UNIQUE (leitor_id, obra_id)` e devolve um erro de domínio `JaNaEstante` se a Obra já estiver lá.
-- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
+- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Com uma execução `tecnico` ativa, insere também os 50 Vizinhos técnicos dela, pelo mesmo KNN restrito às Obras técnicas (§8.8). Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
 - A Nota pode ficar vazia (R2): a Leitura vai para a Estante, mas fica fora da pontuação.
 
 `estante.mudar_nota(...)` e `estante.remover(...)` (R2) agem direto na tabela. Como as Sugestões são calculadas na leitura (§8.5), a mudança aparece na próxima abertura de "Para você", sem nenhum recálculo.
@@ -314,7 +325,7 @@ Abre automaticamente enquanto o Leitor tem **menos de 5 Leituras com Nota** e ai
 Obras sem `capa_url` (3.332 da base) recebem uma capa de reserva gerada localmente (SVG com título e autor), sem chamar a Covers API, que limita a busca por ISBN a 100 requisições a cada 5 min.
 
 1. **Gêneros:** chips de seleção múltipla (`st.pills`) com a lista do §6.3. É preciso escolher pelo menos 1.
-2. **Grade:** 24 Obras do Catálogo por página, fora da Estante, intercaladas por Gênero escolhido (round-robin) e, dentro de cada Gênero, ordenadas por `popularidade × forca`. Cada card tem capa, `titulo_exibicao`, autor, um seletor de Nota (`st.feedback("stars")`) e o botão **"Não li"**, que tira o card desta sessão. Há o botão "Mostrar mais".
+2. **Grade:** 24 Obras do Catálogo por página, fora da Estante, intercaladas por Gênero escolhido (round-robin) e, dentro de cada Gênero, ordenadas por `popularidade × forca`. Em Tecnologia, as Obras da Open Library têm popularidade 0 (§8.8). Vêm primeiro as Obras com popularidade, depois as da lista curada (`curada`) e por fim as outras, por `edicoes_ol` decrescente. Cada card tem capa, `titulo_exibicao`, autor, um seletor de Nota (`st.feedback("stars")`) e o botão **"Não li"**, que tira o card desta sessão. Há o botão "Mostrar mais".
 3. **Contador:** "3 de 5 Notas". Ao chegar a 5, aparece o botão **"Ver minhas sugestões"**. Na fase 1, como "Para você" ainda não existe, ele leva à Estante.
 4. Um campo "Não achou? Buscar livro" abre a busca do §7.1 no mesmo fluxo.
 
@@ -337,12 +348,12 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `leitura_salva` | `{origem, duracao_s, com_nota}`, onde `duracao_s` = tempo desde o último `busca_iniciada` da sessão | O3 |
 | `nota_alterada` | `{de, para}` | — |
 | `leitura_removida` | `{nota}` | — |
-| `sugestao_exibida` | `{posicao, pontuacao, motivo_obra_id, execucoes}`, uma vez por item por abertura da lista | O2 |
+| `sugestao_exibida` | `{posicao, pontuacao, motivo_obra_id, execucoes, lista}`, uma vez por item por abertura da lista. `lista` é `geral` ou `tecnologia` (§8.8); os eventos de antes da fase 6 não têm o campo e contam como `geral`. | O2 |
 | `sugestao_aberta` | `{posicao}` | O2 |
 | `ja_li_de_sugestao` | `{posicao, nota}` | O5 |
 | `montagem_pulada` | `{}` | — (fecha a abertura automática da Montagem) |
-| `sugestao_dispensada` | `{posicao}`, com `posicao` nula fora de "Para você" | O2 (R7) |
-| `quero_ler_salvo` | `{posicao}`, idem | O2 (R8) |
+| `sugestao_dispensada` | `{posicao, lista}`, com `posicao` e `lista` nulas fora de "Para você" | O2 (R7) |
+| `quero_ler_salvo` | `{posicao, lista}`, idem | O2 (R8) |
 | `leitura_iniciada` | `{posicao}`, idem; vinda de Quero ler, a posição salva lá | — (R13) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
@@ -379,7 +390,7 @@ sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
   O título original só entra se for diferente, e as partes vazias saem. Os temas são até 15 tags de leitores (as de maior contagem) e até 10 assuntos da Open Library, em minúsculas e sem repetir. A descrição é cortada na última palavra inteira, com "…".
   O prefixo ou instrução exigido pelo modelo vencedor é aplicado por `recomendacao.embeddings`, num único lugar.
 - O embedding é normalizado (norma 1). A similaridade é o cosseno.
-- **Em lote:** todas as Obras do Catálogo na GPU, em batches de 64, fp16. Os Vizinhos saem de `E Eᵀ` por blocos, guardando os top K = 50, sem a própria Obra e com **as Obras do mesmo autor limitadas a 5** (senão uma série domina a lista).
+- **Em lote:** todas as Obras do Catálogo na GPU, em batches de 64, fp16. Os Vizinhos saem de `E Eᵀ` por blocos, guardando os top K = 50, sem a própria Obra e com **as Obras do mesmo autor limitadas a 5** (senão uma série domina a lista). As Obras `origem='open_library'` recebem embedding, mas **nunca entram como Vizinho** numa execução de conteúdo: elas são sugeridas só pela execução `tecnico` (§8.8, ADR 0009).
 - **Interativo:** uma Obra por vez (§7.3), com KNN no pgvector (índice HNSW, `vector_cosine_ops`).
 - O modelo é carregado uma vez por processo e o nome dele fica em `execucao_modelo.modelo`.
 - **Embeddings por execução:** `calcular-conteudo` guarda os embeddings em `data/embeddings/conteudo-<execucao>.npz`, e só o `ativar` os copia para `obra.embedding` (com `embedding_execucao_id`). Assim o bake-off calcula vários modelos sem mexer no que o app usa. As Obras do Leitor que a execução ativada não cobre ficam pendentes para o `atualizar`.
@@ -389,7 +400,7 @@ sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
 `recomendacao.pagina_da_obra(obra_id, leitor_id) -> PaginaObra`:
 
 - Mostra capa, `titulo_exibicao` (com o título original abaixo, se for diferente), autor, ano, descrição, Gêneros, a Nota do Leitor (se já leu) e as ações.
-- **R5a "Parecidos com este":** os top 10 Vizinhos da execução de conteúdo ativa.
+- **R5a "Parecidos com este":** os top 10 Vizinhos da execução de conteúdo ativa. Numa Obra técnica (do Gênero Tecnologia), os top 10 da execução `tecnico` ativa (§8.8).
 - **R5b "Quem leu este também gostou":** os top 10 Vizinhos da execução de coleitura ativa. Se não houver nenhum, mostra o texto exato do PRD: "Ainda não há dados de outros leitores para este livro". Nenhuma outra fonte preenche a seção.
 - Obras da Estante aparecem com o selo **"lido"**.
 - Cada item é um link para `?obra=<id>`, o que permite navegar em cadeia.
@@ -498,6 +509,89 @@ Decisões do Leitor (19/11/2026, [ADR 0008](adr/0008-estou-lendo-sem-progresso.m
 
 **UI.** Página "Estou lendo" no `st.navigation`, antes de Quero ler, com "Já li" e "Parei de ler" em cada item. Vazia: chamada para Quero ler. O botão "Comecei a ler" fica nos cards de "Para você", em cada item de Quero ler e na página da Obra fora da Estante.
 
+### 8.8 Fase 6: Obras técnicas e aba "Tecnologia" (R14)
+
+Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-library.md)):
+- "técnico" é desenvolvimento de software, dados e ML, arquitetura, engenharia de software, UX e design de produto, DevOps e gestão de times de tecnologia, sem biografias nem história da tecnologia;
+- as Obras técnicas vêm dos dumps da Open Library, sem Coleitura;
+- elas são sugeridas só por conteúdo, numa aba própria de "Para você";
+- a lista geral não muda.
+
+**Carga** (`pipeline/tecnicas.py`, comando `carregar-tecnicas --dumps data/ol`), em streaming, como no §6.2:
+
+1. **Works técnicas.** Uma work é técnica se algum item de `subjects`, em minúsculas e com espaços normalizados, casa com `catalogo/assuntos_tecnicos.yaml`. O arquivo tem:
+   - **iguais:** "computer programming", "software engineering", "machine learning", "user interfaces (computer systems)"...;
+   - **prefixos:** "computer programming", "software architecture"...;
+   - **o sufixo** "(computer program language)".
+
+   Saem as works com assunto de ficção ou de evento ("fiction", "novel", "juvenile", "congresses", "conference", "proceedings"). Saem também as de título de anais ou série ("proceedings", "transactions on", "lecture notes", "advances in", "conference", "symposium", "workshop").
+2. **Edições.** Para cada work técnica, o dump de editions dá:
+   - o nº de Edições;
+   - o ano mais recente (o maior ano de quatro dígitos em `publish_date`);
+   - as editoras (`publishers`);
+   - os ISBNs (`isbn_13` e `isbn_10` convertido);
+   - se há Edição em português, pelo critério do §6.2.
+3. **Corte.** A work entra se cumprir uma destas condições:
+   - tem **≥ 10 Edições**;
+   - tem Edição de editora técnica (`catalogo/editoras_tecnicas.txt`, expressões sem diferenciar maiúsculas: O'Reilly, Packt, Manning, Pragmatic, No Starch, Addison-Wesley, Apress, Microsoft Press, Prentice Hall, Pearson, MIT Press, Morgan Kaufmann, Alta Books, Novatec, Casa do Código...), com ano mais recente **≥ 2012** e com **≥ 2 Edições ou ano ≥ 2018**;
+   - está na **lista curada**.
+
+   Medido em 19/11/2026 sobre os dumps de então: ~4.250 works, mais a lista curada.
+4. **Lista curada** (`catalogo/tecnicos_curados.yaml`, revisada pelo Leitor). Cada item tem:
+   - `work`, a chave da OL;
+   - `titulo` e `autor`, para conferência;
+   - opcionalmente, `fundir`: as works duplicadas da mesma Obra (*Refactoring* tem 7 no dump). Os ISBNs delas entram na Obra.
+
+   A carga falha com mensagem clara se uma chave não existir no dump ou se o título dela não bater com o da lista. Os itens da lista entram com `curada = true`, mesmo fora do corte e mesmo sem assunto técnico (*SICP*).
+5. **Obra.** Cada work selecionada vira uma Obra com `origem='open_library'`:
+   - `titulo` = título da work (com o subtítulo, se houver);
+   - `autores` = nomes do dump de `authors`, na ordem da work;
+   - `ano_original` = `first_publish_date` ou, na falta, o menor ano das Edições;
+   - `descricao`, `ol_work_key`, `popularidade = 0` e `edicoes_ol`;
+   - `capa_url` pelo id de capa da work (`covers.openlibrary.org/b/id/{id}-M.jpg`). O acesso por id não tem o limite de 100 req/5 min do acesso por ISBN;
+   - `titulo_exibicao` e `tem_edicao_pt` pelas regras do §6.2;
+   - todos os ISBNs vão para `obra_isbn` com `origem='open_library'`. Um ISBN que já está em outra Obra fica com ela;
+   - os assuntos vão para `obra_tag` com `contagem = 0`;
+   - uma linha em `obra_genero` para Tecnologia, com `forca = 1`.
+
+   Assim, uma Edição técnica achada na busca (§7.1) cai direto na Obra pelo passo 1 do §7.2.
+6. **Obras que já existem.** Uma work já ligada a uma Obra (`ol_work_key`) não vira Obra nova:
+   - se a Obra é do Leitor (`origem='leitor'`), ela ganha Tecnologia com `forca = 1`;
+   - se é da Base, fica como está. O Gênero dela vem só das tags.
+7. **Idempotência.** O upsert é por `ol_work_key`. Uma Obra `origem='open_library'` que sai do corte numa carga nova é apagada se não tiver Leitura, lista (Quero ler, Estou lendo, Dispensa), Edição nem evento. Se tiver, fica.
+8. **`enriquecer-ol` depois.** As works das Obras `open_library` contam como ocupadas, como as do Leitor: nenhuma Obra da Base fica com elas. Os ISBNs `origem='open_library'` dessas Obras são do `carregar-tecnicas`, e o `enriquecer-ol` só refaz os das outras Obras.
+9. **Log.** Registra:
+   - quantas works entraram por cada ramo do corte e pela lista;
+   - quantas têm descrição;
+   - quantas têm Edição em português;
+   - quantas foram apagadas ou fundidas.
+
+**Vizinhos** (`calcular-tecnico`):
+- Gera, com o modelo da execução de conteúdo ativa, os embeddings que faltam (as Obras `open_library` novas). Usa o texto do §8.2: sem descrição, ficam título, autor, Gêneros e assuntos. Grava em `obra.embedding`.
+- Cria uma execução `tecnico` com:
+  - `modelo` igual ao da execução de conteúdo ativa;
+  - `parametros`: `conteudo_execucao_id`, `k = 50` e `escala` (média das similaridades gravadas, como no §8.5).
+- Para cada Obra do Catálogo com embedding (Base, Leitor e Open Library), guarda os 50 Vizinhos mais parecidos **entre as Obras técnicas**. A própria Obra fica de fora, e vale o limite de 5 Obras do mesmo autor do §8.2. O cálculo é `E E_tecᵀ` por blocos, no CPU (numpy): ~14 mil × ~4 mil leva segundos. Os embeddings vêm de `obra.embedding`.
+- A execução já entra ativa e desativa a `tecnico` anterior. O critério do §9.4 não se aplica, porque não há avaliação offline sem Coleitura (ADR 0009).
+- Quando uma execução de conteúdo é ativada, o `ativar` roda o `calcular-tecnico` de novo (§6).
+
+**"Para você", aba "Tecnologia".** `recomendacao.para_voce_tecnologia(leitor_id, limite=20, so_edicao_pt=False) -> ParaVoce` usa a consulta do §8.5, parametrizada:
+- as similaridades vêm só da execução `tecnico` ativa, divididas pela escala dela (α = 1);
+- **β = 0**: a popularidade não entra;
+- as candidatas são as Obras técnicas: as Obras `open_library` e as Obras técnicas da Base;
+- as exclusões são as mesmas do §8.5 a §8.7: Estante, Dispensas, Quero ler e Estou lendo;
+- Contribuintes, Motivo e o mínimo de 3 Leituras com Nota são os mesmos. Qualquer Leitura com Nota pode ser Contribuinte, técnica ou não;
+- tem o filtro de idioma (`so_edicao_pt`) e não tem o filtro de Gênero.
+
+`recomendacao.pontuacao`, `para_voce` e o teste de paridade com o SQL não mudam. A meta de desempenho é a do §8.5: ≤ 500 ms com 500 Leituras.
+
+**UI.**
+- "Para você" ganha um seletor no topo, "Para você" | "Tecnologia" (`st.segmented_control`, com cara de abas). O `st.tabs` desenharia as duas listas a cada abertura e gravaria `sugestao_exibida` das duas, mesmo com o Leitor olhando só uma.
+- Os chips de Gênero ficam só na lista geral. A chave "Só com edição em português" fica nas duas.
+- Os cards são os mesmos, com as mesmas ações.
+- Os eventos `sugestao_exibida`, `sugestao_dispensada` e `quero_ler_salvo` levam `lista` (§7.6). A consulta do O2 em `reports/consultas-metricas.sql` separa as duas listas.
+- A Montagem da Estante ganha o chip Tecnologia, com a ordem do §7.4.
+
 ---
 
 ## 9. Avaliação offline
@@ -543,7 +637,7 @@ O app **não** sobe com o Windows: ele só roda quando o Leitor o abre, com `scr
 `atualizar` faz, em ordem e com tempo máximo total de 10 min:
 
 1. Aplica as migrações pendentes (`alembic upgrade head`).
-2. Gera os embeddings e os Vizinhos de conteúdo das Obras `origem='leitor'` que estão sem eles.
+2. Gera os embeddings e os Vizinhos de conteúdo das Obras `origem='leitor'` que estão sem eles e, com uma execução `tecnico` ativa, os Vizinhos técnicos delas (§7.3, §8.8).
 3. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução (`pipeline/enriquecimento_leitor.py`). Obra sem ISBN é marcada sem consulta; com a Open Library fora do ar, o resto fica para a próxima abertura.
 4. Grava `ultima_atualizacao` (tabela `config_app`, chave/valor).
 
@@ -559,7 +653,7 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 | Página | Conteúdo | Requisitos |
 |---|---|---|
-| Para você | Filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Comecei a ler", "Já li", "Não tenho interesse"). | R4, R7, R8, R10, R11, R13 |
+| Para você | Seletor "Para você" / "Tecnologia" (§8.8) e filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Comecei a ler", "Já li", "Não tenho interesse"). | R4, R7, R8, R10, R11, R13, R14 |
 | Estou lendo | As Obras em leitura, com "Já li" e "Parei de ler". Vazia: chamada para Quero ler. | R13 |
 | Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". Vazia: chamada para "Para você". | R8, R13 |
 | Estante | §7.5 | R3 |
@@ -579,11 +673,11 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 | Camada | Como | Exemplos |
 |---|---|---|
-| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata; a Obra dispensada não volta; "Já li" tira de Quero ler e de Estou lendo; Estou lendo leva a posição de Quero ler; o filtro não muda a pontuação nem a ordem; os 3 Contribuintes com a participação |
+| Domínio + banco | Banco real, sem mocks | Deduplicação por Obra; mudar a Nota de 5 para 1 derruba as Sugestões cujo Motivo era a Obra (R2); remover uma Leitura faz a Obra voltar a ser candidata; nunca sugere Obra da Estante; Motivo sempre com Nota ≥ 4; menos de 3 Notas → estado "avalie mais"; R5b vazio → mensagem exata; a Obra dispensada não volta; "Já li" tira de Quero ler e de Estou lendo; Estou lendo leva a posição de Quero ler; o filtro não muda a pontuação nem a ordem; os 3 Contribuintes com a participação; a aba "Tecnologia" só traz Obras técnicas e aceita Contribuinte não técnico; Obra `open_library` nunca aparece na lista geral |
 | Algoritmos | Funções puras com matrizes pequenas feitas à mão | Cosseno ajustado e encolhimento contra um cálculo manual 4×3; top K exclui a própria Obra e respeita o limite por autor; NDCG@20 contra um valor conhecido |
 | Resolução Edição → Obra | Respostas gravadas da OL e do Google Books (JSON em `tests/dados/http/`), via transporte falso do `httpx` | Um caso por regra (1 a 4) do §7.2, incluindo *Duna* (Aleph) → *Dune* |
 | Fixture de Catálogo | ~40 Obras sintéticas, com Vizinhos fixos | Com 5 Notas positivas, `para_voce` devolve ≥ 10 Sugestões (O1) |
-| Pipeline | Amostra de 200 Obras / 2 mil Notas em `tests/dados/goodbooks-mini/` | `carregar-base` é idempotente; `ativar` deixa no máximo uma execução ativa por tipo |
+| Pipeline | Amostra de 200 Obras / 2 mil Notas em `tests/dados/goodbooks-mini/`; trechos dos dumps da OL em `tests/dados/ol-mini/` | `carregar-base` é idempotente; `ativar` deixa no máximo uma execução ativa por tipo; `carregar-tecnicas` é idempotente e aplica cada ramo do corte, os filtros de ficção e anais, a lista curada com `fundir` e a regra das Obras que já existem |
 | UI | `streamlit.testing.v1.AppTest` só nos fluxos críticos | Estante vazia mostra a chamada; Montagem chega a 5 e mostra o botão |
 
 As chamadas reais às APIs externas e à GPU ficam em testes marcados `@pytest.mark.externo` e `@pytest.mark.gpu`, fora da execução padrão.
@@ -592,7 +686,7 @@ As chamadas reais às APIs externas e à GPU ficam em testes marcados `@pytest.m
 
 ## 13. Pontos de extensão (P1) e restrições (P2)
 
-**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6), e R13 na fase 5 (§8.7).
+**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6), R13 na fase 5 (§8.7) e R14 na fase 6 (§8.8).
 
 **P2, o que o desenho não pode impedir:**
 
@@ -616,6 +710,7 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | **3. Coleitura** | R5b, R4 completo, calibração de α | NDCG@20 combinado ≥ o melhor dos dois isolados; **taxa de correspondência das Leituras com Obras `origem='base'` ≥ 40 %**, senão reabrir a escolha da Base de coleitura (PRD §9); ≥ 40 % das Leituras com R5b preenchido (O4) |
 | **4. Ajustes** | R7, R8, R10, R11 (§8.6), migração 0006, `tem_edicao_pt` no `enriquecer-ol` | Critérios de R7, R8, R10 e R11 do PRD cobertos por teste contra o banco real; o teste de paridade SQL × avaliação inalterado; a consulta do O2 (salvas ÷ (salvas + dispensadas) nas top 10) em `reports/consultas-metricas.sql`; `enriquecer-ol` rodado de novo no banco do app, com a contagem de `tem_edicao_pt` no log |
 | **5. Estou lendo** | R13 (§8.7, ADR 0008), migração 0007, página Estou lendo | Critério do R13 do PRD coberto por teste contra o banco real: entra por "Para você", Quero ler e a página da Obra; sai de Quero ler ao entrar; "Já li" tira da lista e grava `origem='sugestao'` com a posição vinda de Quero ler; não aparece em "Para você"; o teste de paridade SQL × avaliação inalterado |
+| **6. Obras técnicas** | R14 (§8.8, ADR 0009), migração 0008, `carregar-tecnicas`, `calcular-tecnico`, Gênero Tecnologia, aba "Tecnologia" | Lista curada revisada pelo Leitor; no banco do app, ≥ 3.000 Obras `open_library`, com as contagens do log; *AI Engineering*, *Designing Data-Intensive Applications*, *Clean Code*, *Refactoring* e *Domain-Driven Design* no Catálogo; nenhuma Obra `open_library` como Vizinho de conteúdo; a lista geral de "Para você" igual à de antes da carga (mesma consulta, mesmas execuções de conteúdo e de coleitura); com 3 Leituras com Nota, nenhuma técnica, a aba "Tecnologia" devolve ≥ 10 Sugestões técnicas; aba ≤ 500 ms; `sugestao_exibida` com `lista`; o teste de paridade SQL × avaliação inalterado |
 
 ---
 
@@ -628,4 +723,5 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | Viés de popularidade do goodbooks-10k (só livros populares) | Sugestões óbvias | Cobertura medida no §9.3; limite por autor; Base maior no P2 |
 | Docker Desktop não abre ou demora | App não abre | `iniciar.ps1` abre o Docker Desktop, espera até 120 s e mostra o erro com o caminho do log |
 | Dumps da OL grandes (~12 GB) | Primeira carga lenta | Streaming; processamento único; a carga roda bem uma vez e não precisa ser rápida |
+| Metadados técnicos pobres na OL (~88 % sem descrição, works duplicadas, livros datados) | Sugestões técnicas fracas ou obsoletas | Corte por editora técnica e ano; lista curada com `fundir`; Dispensa; a qualidade é julgada pelo Leitor no uso (ADR 0009) |
 | VRAM de 12 GB | Modelo de embedding grande não cabe | Os finalistas já são filtrados por VRAM (§8.4.1); fp16; batches pequenos |

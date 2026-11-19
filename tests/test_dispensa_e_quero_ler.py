@@ -46,7 +46,7 @@ def test_dispensar_grava_e_registra_o_evento(conexao, duna) -> None:
 
     assert dispensada(conexao, LEITOR_ID, duna)
     assert conexao.execute(text("SELECT count(*) FROM dispensa")).scalar_one() == 1
-    assert _eventos(conexao, "sugestao_dispensada")[0] == (duna, {"posicao": 3})
+    assert _eventos(conexao, "sugestao_dispensada")[0] == (duna, {"posicao": 3, "lista": None})
 
 
 def test_desfazer_a_dispensa(conexao, duna) -> None:
@@ -80,8 +80,8 @@ def test_salvar_em_quero_ler_lista_da_mais_recente(conexao, duna, fundacao) -> N
     ]
     assert lista[1].autores == ("Frank Herbert",)
     assert _eventos(conexao, "quero_ler_salvo") == [
-        (duna, {"posicao": 1}),
-        (fundacao, {"posicao": None}),
+        (duna, {"posicao": 1, "lista": None}),
+        (fundacao, {"posicao": None, "lista": None}),
     ]
 
 
@@ -119,3 +119,14 @@ def test_tirar_de_quero_ler(conexao, duna) -> None:
     salvar_quero_ler(conexao, LEITOR_ID, duna)
     tirar_de_quero_ler(conexao, LEITOR_ID, duna)
     assert listar_quero_ler(conexao, LEITOR_ID) == []
+
+
+def test_a_lista_de_para_voce_vai_nos_eventos_do_o2(conexao, duna, fundacao) -> None:
+    """O O2 separa a lista geral da aba "Tecnologia" (SPEC §7.6, §8.8)."""
+    dispensar(conexao, LEITOR_ID, duna, posicao=2, lista="tecnologia")
+    salvar_quero_ler(conexao, LEITOR_ID, fundacao, posicao=1, lista="geral")
+
+    assert _eventos(conexao, "sugestao_dispensada") == [
+        (duna, {"posicao": 2, "lista": "tecnologia"})
+    ]
+    assert _eventos(conexao, "quero_ler_salvo") == [(fundacao, {"posicao": 1, "lista": "geral"})]

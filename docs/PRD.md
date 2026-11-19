@@ -123,6 +123,7 @@ Persona única: **o leitor** (eu).
 | R10 | **Filtros** na lista "Para você" por gênero e idioma | Filtro não recalcula a pontuação, só esconde itens |
 | R11 | **Motivo detalhado**: ver todos os livros lidos que contribuíram para uma sugestão | Lista os 3 maiores contribuintes com peso |
 | R13 | **Estou lendo**: lista das Obras que comecei, sem página nem percentual | Entra por "Para você", Quero ler ou a página do livro; sai de Quero ler ao entrar e sai da lista quando marco "Já li"; não aparece em "Para você" |
+| R14 | **Livros técnicos**: uma aba "Tecnologia" em "Para você", com Sugestões de software, dados, arquitetura, UX, DevOps e gestão de times de tecnologia ([ADR 0009](adr/0009-obras-tecnicas-da-open-library.md)) | Com 3 livros avaliados, mesmo sem nenhum técnico, a aba mostra ≥ 10 sugestões técnicas, cada uma com motivo; lançamentos recentes (ex.: *AI Engineering*) estão no catálogo; a lista geral não muda |
 
 ### P2: futuro (projetar para não impedir)
 
@@ -152,6 +153,8 @@ similaridade = α · conteudo(c, r) + (1 − α) · coleitura(c, r)   (α inicia
 ```
 
 O motivo exibido é o *r* com a maior parcela positiva. Os números são ponto de partida para a engenharia calibrar, não contrato.
+
+**Livros técnicos (R14).** Nenhuma base pública com licença utilizável tem notas de leitores para livros técnicos. Por isso, eles vêm da Open Library e são sugeridos só por conteúdo (α = 1), numa aba própria, sem popularidade. A lista geral continua com a mistura acima ([ADR 0009](adr/0009-obras-tecnicas-da-open-library.md)).
 
 ## 7. Métricas de sucesso
 
@@ -191,5 +194,6 @@ Sem prazo fixo. Cada fase entrega algo usável.
 | 3. Coleitura | Base pública carregada; "Quem leu também gostou" e mistura na lista | R5b, R4 completo |
 | 4. Ajustes | Dispensar, quero ler, filtros, motivo detalhado | R7, R8, R10, R11 |
 | 5. Estou lendo | Lista das Obras em leitura, entre Quero ler e Já li | R13 |
+| 6. Livros técnicos | Obras técnicas da Open Library no catálogo e aba "Tecnologia" em "Para você" | R14 |
 
 **Dependências:** API de catálogo (fase 1); escolha e licença da base pública (fase 3). Como a maioria das leituras é tradução (Q1), a fase 3 continua antes da 4. O risco que resta é a taxa de correspondência edição brasileira → obra original. Se ficar abaixo de 40 % (O4), reavaliar a base (Q2).

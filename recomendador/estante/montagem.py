@@ -34,7 +34,9 @@ def pular_montagem(conn: Connection, leitor_id: uuid.UUID) -> None:
 
 
 # Dentro de cada Gênero, por popularidade × força; entre os Gêneros, round-robin na ordem
-# escolhida. Uma Obra de dois Gêneros escolhidos aparece só na primeira vez.
+# escolhida. Uma Obra de dois Gêneros escolhidos aparece só na primeira vez. As Obras
+# técnicas da Open Library têm popularidade 0 e vêm depois das da Base: primeiro as da
+# lista curada, depois por nº de Edições no dump (SPEC §7.4, §8.8).
 _GRADE = text(
     """
     WITH escolhidos AS (
@@ -45,12 +47,14 @@ _GRADE = text(
     por_genero AS (
         SELECT og.obra_id, e.slug, e.posicao,
                row_number() OVER (
-                   PARTITION BY e.id ORDER BY o.popularidade * og.forca DESC, o.id
+                   PARTITION BY e.id
+                   ORDER BY o.popularidade * og.forca DESC, o.curada DESC,
+                            o.edicoes_ol DESC NULLS LAST, o.id
                ) AS ordem
         FROM escolhidos e
         JOIN obra_genero og ON og.genero_id = e.id
         JOIN obra o ON o.id = og.obra_id
-        WHERE o.origem = 'base'
+        WHERE o.origem IN ('base', 'open_library')
           AND o.id <> ALL(CAST(:excluir AS bigint[]))
           AND NOT EXISTS (
               SELECT 1 FROM leitura l WHERE l.leitor_id = :leitor AND l.obra_id = o.id

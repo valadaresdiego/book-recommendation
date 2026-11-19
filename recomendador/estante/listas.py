@@ -78,11 +78,16 @@ def _listar(conn: Connection, tabela: str, leitor_id: uuid.UUID, classe: type) -
 
 
 def dispensar(
-    conn: Connection, leitor_id: uuid.UUID, obra_id: int, posicao: int | None = None
+    conn: Connection,
+    leitor_id: uuid.UUID,
+    obra_id: int,
+    posicao: int | None = None,
+    lista: str | None = None,
 ) -> None:
     """A Obra não volta a "Para você". Sai também de Quero ler e de Estou lendo.
 
-    `posicao` é a posição em "Para você", para o O2 (evento `sugestao_dispensada`).
+    `posicao` é a posição em "Para você", e `lista` a lista de onde ela veio (`geral` ou
+    `tecnologia`), para o O2 (evento `sugestao_dispensada`, SPEC §7.6 e §8.8).
     """
     conn.execute(
         text("INSERT INTO dispensa (leitor_id, obra_id) VALUES (:l, :o) ON CONFLICT DO NOTHING"),
@@ -90,7 +95,7 @@ def dispensar(
     )
     _apagar(conn, "quero_ler", leitor_id, obra_id)
     _apagar(conn, "estou_lendo", leitor_id, obra_id)
-    registrar_evento(conn, leitor_id, "sugestao_dispensada", obra_id, posicao=posicao)
+    registrar_evento(conn, leitor_id, "sugestao_dispensada", obra_id, posicao=posicao, lista=lista)
 
 
 def desfazer_dispensa(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> None:
@@ -105,13 +110,17 @@ def dispensada(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> bool:
 
 
 def salvar_quero_ler(
-    conn: Connection, leitor_id: uuid.UUID, obra_id: int, posicao: int | None = None
+    conn: Connection,
+    leitor_id: uuid.UUID,
+    obra_id: int,
+    posicao: int | None = None,
+    lista: str | None = None,
 ) -> None:
     """Põe a Obra na lista Quero ler, tira de Estou lendo e desfaz uma Dispensa dela.
 
     `posicao` é a posição em "Para você" (O2 e O5); salvar de novo mantém a primeira. Sem
-    ela, vale a que a Obra tinha em Estou lendo. Levanta `JaNaEstante` se a Obra já for uma
-    Leitura.
+    ela, vale a que a Obra tinha em Estou lendo. `lista` é a lista de "Para você" de onde a
+    Obra veio (O2, §8.8). Levanta `JaNaEstante` se a Obra já for uma Leitura.
     """
     if existente := leitura_da_obra(conn, leitor_id, obra_id):
         raise JaNaEstante(existente)
@@ -126,7 +135,7 @@ def salvar_quero_ler(
     )
     _apagar(conn, "dispensa", leitor_id, obra_id)
     _apagar(conn, "estou_lendo", leitor_id, obra_id)
-    registrar_evento(conn, leitor_id, "quero_ler_salvo", obra_id, posicao=posicao)
+    registrar_evento(conn, leitor_id, "quero_ler_salvo", obra_id, posicao=posicao, lista=lista)
 
 
 def tirar_de_quero_ler(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> None:
