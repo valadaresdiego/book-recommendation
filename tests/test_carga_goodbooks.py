@@ -7,8 +7,10 @@ import pandas as pd
 import pytest
 from sqlalchemy import Connection, text
 
+from recomendador.config import LEITOR_ID
 from recomendador.pipeline.carga_goodbooks import (
     ArquivoInvalido,
+    Fusao,
     carregar_base,
     isbn13_do_goodbooks,
     limpar_titulo,
@@ -207,3 +209,93 @@ def test_coluna_faltando_falha_com_mensagem_clara(conexao: Connection, pasta: Pa
         ArquivoInvalido, match=r"books\.csv: faltam as colunas \['original_title'\]"
     ):
         carregar_base(conexao, pasta)
+
+
+# --- Fusão de duplicatas do goodbooks-10k (SPEC §6.1) ---
+
+# No mini, o livro 7 (The Hobbit) faz o papel da duplicada e o 2 (Harry Potter), o da que fica.
+FUSAO = Fusao(duplicada=7, fica=2, titulo="Harry Potter")
+
+
+def _leitura(conexao: Connection, obra_id: int, nota: int) -> None:
+    conexao.execute(
+        text("INSERT INTO leitura (leitor_id, obra_id, nota, origem) VALUES (:l, :o, :n, 'busca')"),
+        {"l": LEITOR_ID, "o": obra_id, "n": nota},
+    )
+
+
+def test_fusao_junta_a_duplicada_na_que_fica(conexao: Connection, pasta: Path) -> None:
+    carregar_base(conexao, pasta, fusoes=())  # o banco de antes da fusão
+    duplicada, fica = _obra(conexao, 7), _obra(conexao, 2)
+    isbns_da_duplicada = _isbns(conexao, duplicada["id"])
+    _leitura(conexao, duplicada["id"], 5)
+    conexao.execute(
+        text("INSERT INTO edicao (obra_id, titulo) VALUES (:o, 'O Hobbit')"),
+        {"o": duplicada["id"]},
+    )
+    conexao.execute(
+        text("INSERT INTO evento (leitor_id, tipo, obra_id) VALUES (:l, 'teste', :o)"),
+        {"l": LEITOR_ID, "o": duplicada["id"]},
+    )
+    antes = pd.read_parquet(pasta / "notas.parquet")
+
+    resumo = carregar_base(conexao, pasta, fusoes=(FUSAO,))
+
+    assert (
+        conexao.execute(
+            text("SELECT count(*) FROM obra WHERE goodbooks_book_id = 7 OR id = :o"),
+            {"o": duplicada["id"]},
+        ).scalar_one()
+        == 0
+    )
+    depois = _obra(conexao, 2)
+    assert depois["id"] == fica["id"]
+    assert depois["popularidade"] == fica["popularidade"] + duplicada["popularidade"]
+    assert (depois["titulo"], depois["titulo_exibicao"]) == ("Harry Potter", "Harry Potter")
+    assert isbns_da_duplicada <= _isbns(conexao, fica["id"])
+    # O que o Leitor tinha na duplicada passa para a que fica.
+    for tabela in ("leitura", "edicao", "evento"):
+        assert conexao.execute(text(f"SELECT obra_id FROM {tabela}")).scalars().all() == [
+            fica["id"]
+        ]
+    assert "fantasy" in set(
+        conexao.execute(
+            text("SELECT tag FROM obra_tag WHERE obra_id = :o"), {"o": fica["id"]}
+        ).scalars()
+    )
+    # As Notas da duplicada vão para a que fica; quem deu Nota às duas fica com a da que fica.
+    notas = pd.read_parquet(pasta / "notas.parquet")
+    assert 7 not in set(notas["goodbooks_book_id"])
+    em_comum = set(antes[antes.goodbooks_book_id == 7].usuario_base) & set(
+        antes[antes.goodbooks_book_id == 2].usuario_base
+    )
+    assert len(em_comum) == 7
+    assert len(notas) == resumo.notas == len(antes) - len(em_comum)
+    da_que_fica = antes[antes.goodbooks_book_id == 2].set_index("usuario_base")["nota"]
+    juntas = notas[notas.goodbooks_book_id == 2].set_index("usuario_base")["nota"]
+    assert juntas[list(em_comum)].equals(da_que_fica[list(em_comum)])
+    assert not notas.duplicated(["usuario_base", "goodbooks_book_id"]).any()
+
+    # Rodar de novo não muda nada.
+    contagem = conexao.execute(text("SELECT count(*) FROM obra")).scalar_one()
+    assert carregar_base(conexao, pasta, fusoes=(FUSAO,)) == resumo
+    assert conexao.execute(text("SELECT count(*) FROM obra")).scalar_one() == contagem
+
+
+def test_fusao_com_as_duas_na_estante_fica_a_leitura_da_que_fica(
+    conexao: Connection, pasta: Path
+) -> None:
+    carregar_base(conexao, pasta, fusoes=())
+    _leitura(conexao, _obra(conexao, 7)["id"], 5)
+    _leitura(conexao, _obra(conexao, 2)["id"], 3)
+
+    carregar_base(conexao, pasta, fusoes=(FUSAO,))
+
+    assert conexao.execute(text("SELECT obra_id, nota FROM leitura")).all() == [
+        (_obra(conexao, 2)["id"], 3)
+    ]
+
+
+def test_fusao_sem_a_duplicada_no_csv_nao_faz_nada(conexao: Connection, pasta: Path) -> None:
+    """As fusões reais (257 e 568) não estão no mini."""
+    assert carregar_base(conexao, pasta).obras == carregar_base(conexao, pasta, fusoes=()).obras

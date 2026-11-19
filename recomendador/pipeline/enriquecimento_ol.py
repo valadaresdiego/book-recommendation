@@ -48,6 +48,7 @@ class ResumoEnriquecimento:
     com_descricao: int
     com_titulo_pt: int
     isbns_da_open_library: int  # em `obra_isbn` depois da execução
+    com_edicao_pt: int = 0  # `tem_edicao_pt`: o filtro de idioma de "Para você" (R10)
     trocadas_por_irma: int = 0
     trocadas_por_errada: int = 0
     descartadas: int = 0
@@ -364,10 +365,12 @@ class _EdicoesDaWork:
     quantas: int = 0
     isbns: set[str] = field(default_factory=set)
     titulo_pt: tuple[int, int, str] | None = None
+    em_portugues: bool = False  # alguma Edição em português, com título ou sem
 
 
 def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWork]:
-    """Passada 3: por work, quantas Edições, todos os ISBNs e o título pt mais recente."""
+    """Passada 3: por work, quantas Edições, todos os ISBNs, se há Edição em português e
+    o título pt mais recente."""
     por_work: dict[str, _EdicoesDaWork] = {}
     for linha in _linhas(editions):
         m = _RE_WORK.search(linha)
@@ -376,8 +379,10 @@ def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWor
         e = por_work.setdefault(m.group(1), _EdicoesDaWork())
         e.quantas += 1
         e.isbns |= _isbns_da_edicao(dados)
+        portugues = _em_portugues(dados)
+        e.em_portugues |= portugues > 0
         titulo = (dados.get("title") or "").strip()
-        if titulo and (portugues := _em_portugues(dados)):
+        if titulo and portugues:
             candidato = (portugues, _ano(dados.get("publish_date")), titulo)
             if e.titulo_pt is None or candidato > e.titulo_pt:
                 e.titulo_pt = candidato
@@ -467,6 +472,9 @@ def enriquecer_ol(conn: Connection, pasta_dumps: Path) -> ResumoEnriquecimento:
     titulo_pt = {
         o: e.titulo_pt[2] for o, w in work_por_obra.items() if (e := edicoes.get(w)) and e.titulo_pt
     }
+    com_edicao_pt = {
+        o for o, w in work_por_obra.items() if (e := edicoes.get(w)) and e.em_portugues
+    }
     # Uma descrição que veio da work anterior da Obra sai junto com ela.
     descricao_velha = {
         o: d for o, w in anterior.items() if work_por_obra.get(o) != w and (d := descricoes.get(w))
@@ -476,6 +484,7 @@ def enriquecer_ol(conn: Connection, pasta_dumps: Path) -> ResumoEnriquecimento:
         work_por_obra,
         isbns,
         titulo_pt,
+        com_edicao_pt,
         {o: descricoes[w] for o, w in work_por_obra.items() if w in descricoes},
         {o: assuntos[w] for o, w in work_por_obra.items() if w in assuntos},
         descricao_velha,
@@ -493,6 +502,7 @@ def _gravar(
     work_por_obra: dict[int, str],
     isbns: list[tuple[str, int]],
     titulo_pt: dict[int, str],
+    com_edicao_pt: set[int],
     descricoes: dict[int, str],
     assuntos: dict[int, list[str]],
     descricao_velha: dict[int, str],
@@ -533,6 +543,19 @@ def _gravar(
             text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"),
             [{"o": o, "t": t} for o, t in titulo_pt.items()],
         )
+    # Uma Edição em português gravada pelo Leitor (SPEC §7.2) continua valendo.
+    conn.execute(
+        text(
+            "UPDATE obra o SET tem_edicao_pt = EXISTS ("
+            "    SELECT 1 FROM edicao e WHERE e.obra_id = o.id AND e.idioma = 'pt'"
+            ") WHERE o.origem = 'base'"
+        )
+    )
+    if com_edicao_pt:
+        conn.execute(
+            text("UPDATE obra SET tem_edicao_pt = true WHERE id = ANY(:o)"),
+            {"o": sorted(com_edicao_pt)},
+        )
     if descricoes:
         conn.execute(
             text("UPDATE obra SET descricao = :d WHERE id = :o AND descricao IS NULL"),
@@ -555,20 +578,22 @@ _CONTAGENS = text(
     SELECT count(*),
            count(ol_work_key),
            count(descricao),
-           (SELECT count(*) FROM obra_isbn WHERE origem = 'open_library')
+           (SELECT count(*) FROM obra_isbn WHERE origem = 'open_library'),
+           count(*) FILTER (WHERE tem_edicao_pt)
     FROM obra WHERE origem = 'base'
     """
 )
 
 
 def _resumo(conn: Connection, com_titulo_pt: int, c: Conferencia) -> ResumoEnriquecimento:
-    obras, com_work, com_descricao, isbns_ol = conn.execute(_CONTAGENS).one()
+    obras, com_work, com_descricao, isbns_ol, com_edicao_pt = conn.execute(_CONTAGENS).one()
     return ResumoEnriquecimento(
         obras=obras,
         com_work=com_work,
         com_descricao=com_descricao,
         com_titulo_pt=com_titulo_pt,
         isbns_da_open_library=isbns_ol,
+        com_edicao_pt=com_edicao_pt,
         **{k: getattr(c, k) for k in _CATEGORIAS},
     )
 
@@ -578,6 +603,7 @@ def _registrar(r: ResumoEnriquecimento) -> None:
     log.info("  com ol_work_key:        %6d (%.1f %%)", r.com_work, r.pct(r.com_work))
     log.info("  com descrição:          %6d (%.1f %%)", r.com_descricao, r.pct(r.com_descricao))
     log.info("  com título em português:%6d (%.1f %%)", r.com_titulo_pt, r.pct(r.com_titulo_pt))
+    log.info("  com Edição em português:%6d (%.1f %%)", r.com_edicao_pt, r.pct(r.com_edicao_pt))
     log.info("  ISBNs da Open Library em obra_isbn: %d", r.isbns_da_open_library)
     log.info("Conferência das works votadas pelos ISBNs:")
     log.info("  trocadas por uma de mesmo título e autor com mais Edições: %d", r.trocadas_por_irma)

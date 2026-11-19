@@ -32,6 +32,8 @@ class PaginaObra:
     nota: int | None
     parecidos: list[ObraVizinha]  # R5a: Vizinhos de conteúdo
     quem_leu: list[ObraVizinha]  # R5b: Vizinhos de Coleitura (vazio: a UI mostra o aviso)
+    dispensada: bool = False  # R7: a página oferece "Desfazer"
+    quero_ler: bool = False  # R8: está na lista Quero ler
 
 
 _OBRA = text(
@@ -41,7 +43,11 @@ _OBRA = text(
            coalesce((SELECT array_agg(g.nome ORDER BY og.forca DESC)
                      FROM obra_genero og JOIN genero g ON g.id = og.genero_id
                      WHERE og.obra_id = o.id), '{}') AS generos,
-           l.id IS NOT NULL AS na_estante, l.nota
+           l.id IS NOT NULL AS na_estante, l.nota,
+           EXISTS (SELECT 1 FROM dispensa d WHERE d.leitor_id = :leitor AND d.obra_id = o.id)
+               AS dispensada,
+           EXISTS (SELECT 1 FROM quero_ler q WHERE q.leitor_id = :leitor AND q.obra_id = o.id)
+               AS quero_ler
     FROM obra o
     LEFT JOIN leitura l ON l.obra_id = o.id AND l.leitor_id = :leitor
     WHERE o.id = :obra
@@ -84,6 +90,8 @@ def pagina_da_obra(conn: Connection, obra_id: int, leitor_id: uuid.UUID) -> Pagi
         nota=o.nota,
         parecidos=_vizinhos(conn, obra_id, leitor_id, "conteudo"),
         quem_leu=_vizinhos(conn, obra_id, leitor_id, "coleitura"),
+        dispensada=o.dispensada,
+        quero_ler=o.quero_ler,
     )
 
 

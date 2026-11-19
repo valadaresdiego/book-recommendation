@@ -332,4 +332,8 @@ def registrar_resolucao(
             ),
             {"t": edicao.titulo, "o": obra_id},
         )
+    edicao_ol = resolucao.edicao_ol
+    if edicao.idioma == "pt" or (edicao_ol is not None and "por" in edicao_ol.idiomas):
+        # O filtro de idioma de "Para você" (R10, SPEC §8.6).
+        conn.execute(text("UPDATE obra SET tem_edicao_pt = true WHERE id = :o"), {"o": obra_id})
     return ObraRegistrada(obra_id, edicao_id)

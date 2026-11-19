@@ -16,6 +16,8 @@ TIPOS_DE_EVENTO = frozenset(
         "sugestao_aberta",  # {posicao}: O2
         "ja_li_de_sugestao",  # {posicao, nota}: O5
         "montagem_pulada",  # {}: o Leitor clicou em "Pular" na Montagem da Estante
+        "sugestao_dispensada",  # {posicao}: O2 (R7)
+        "quero_ler_salvo",  # {posicao}: O2 (R8)
     }
 )
 

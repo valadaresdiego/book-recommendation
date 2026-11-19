@@ -103,7 +103,8 @@ def adicionar(
     """Põe a Obra na Estante. A Nota pode ficar vazia (R2): a Leitura fica fora das Sugestões.
 
     `duracao_s` é o tempo desde a última busca da sessão, para o O3 (evento `leitura_salva`).
-    Levanta `JaNaEstante` se a Obra já estiver lá, mesmo por outra Edição.
+    Levanta `JaNaEstante` se a Obra já estiver lá, mesmo por outra Edição. A Obra sai da
+    lista Quero ler (R8, SPEC §8.6).
 
     O embedding de uma Obra `origem='leitor'` (SPEC §7.3) é calculado depois, numa
     transação à parte (`recomendacao.calcular_vizinhos_da_obra`), para uma falha nele não
@@ -122,6 +123,10 @@ def adicionar(
         ),
         {"leitor": leitor_id, "obra": obra_id, "edicao": edicao_id, "nota": nota, "origem": origem},
     ).one()
+    conn.execute(
+        text("DELETE FROM quero_ler WHERE leitor_id = :l AND obra_id = :o"),
+        {"l": leitor_id, "o": obra_id},
+    )
     registrar_evento(
         conn,
         leitor_id,

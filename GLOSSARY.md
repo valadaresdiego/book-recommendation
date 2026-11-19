@@ -49,6 +49,14 @@ _Evite_: avaliação, rating, estrelas
 O conjunto das Leituras de um Leitor.
 _Evite_: biblioteca, coleção, lidos
 
+**Quero ler**:
+A lista das Obras que o Leitor guardou para ler depois, separada da Estante. Uma Obra sai dela quando vira Leitura ("Já li") ou quando o Leitor a tira da lista.
+_Evite_: lista de desejos, wishlist, favoritos, "para ler"
+
+**Dispensa**:
+O registro de que o Leitor não tem interesse numa Obra sugerida. A Obra dispensada não volta a "Para você", mas continua no Catálogo e nas seções da página da Obra. O Leitor pode desfazer.
+_Evite_: descarte, rejeição, bloqueio
+
 **Montagem da Estante**:
 O primeiro passo do Leitor com a Estante vazia: ele escolhe gêneros de interesse e dá Nota às Obras populares do Catálogo que já leu, até ter Notas suficientes para receber Sugestões.
 _Evite_: onboarding, cadastro inicial, importação
@@ -75,6 +83,14 @@ _Evite_: similar, relacionado
 Uma Obra do Catálogo, fora da Estante, recomendada ao Leitor com uma pontuação e um Motivo.
 _Evite_: recomendação (para o item), candidato (depois de pontuado)
 
+**Contribuinte**:
+Uma Leitura de Nota alta que somou pontos a uma Sugestão, com a sua participação: a fração que ela deu da soma das parcelas positivas.
+_Evite_: fator, causa
+
 **Motivo**:
-A Leitura de Nota alta que mais contribuiu para uma Sugestão, mostrada em linguagem simples.
+O maior Contribuinte de uma Sugestão, mostrado em linguagem simples. O Motivo detalhado lista os 3 maiores Contribuintes, com a participação de cada um.
 _Evite_: explicação, justificativa
+
+**Edição em português**:
+Uma Edição que a Open Library marca com o idioma português ou que, sem idioma declarado, tem ISBN brasileiro (978-85 ou 978-65). Uma Obra com alguma delas passa no filtro de idioma de "Para você".
+_Evite_: tradução (nem toda Edição em português é tradução)

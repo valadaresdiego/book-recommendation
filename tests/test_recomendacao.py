@@ -2,11 +2,18 @@
 
 import numpy as np
 import pytest
-from fabricas import criar_obra
+from fabricas import criar_genero, criar_obra, ligar_genero
 from sqlalchemy import Connection, text
 
-from recomendador.config import LEITOR_ID, config
-from recomendador.estante import adicionar, mudar_nota, remover
+from recomendador.config import LEITOR_ID, PESO_DA_NOTA, config
+from recomendador.estante import (
+    adicionar,
+    desfazer_dispensa,
+    dispensar,
+    mudar_nota,
+    remover,
+    salvar_quero_ler,
+)
 from recomendador.recomendacao import pagina_da_obra, para_voce
 from recomendador.recomendacao.pontuacao import matriz_de_pesos, matriz_de_similaridade, pontuar
 
@@ -174,6 +181,116 @@ def test_sql_igual_a_pontuacao_da_avaliacao(conexao, catalogo, monkeypatch) -> N
     assert r.sugestoes[0].obra_id == melhor
 
 
+# --- fase 4: Dispensa, Quero ler, filtros e Motivo detalhado (SPEC §8.6) ---
+
+
+def _ids(r) -> list[int]:
+    return [s.obra_id for s in r.sugestoes]
+
+
+def test_obra_dispensada_nao_volta(conexao, catalogo) -> None:
+    """Critério do R7. A pontuação das outras Sugestões não muda."""
+    obras = catalogo["obras"]
+    for o in obras[:3]:
+        _ler(conexao, o, 5)
+    antes = para_voce(conexao, LEITOR_ID, limite=40)
+    primeira = antes.sugestoes[0].obra_id
+
+    dispensar(conexao, LEITOR_ID, primeira, posicao=1)
+
+    depois = para_voce(conexao, LEITOR_ID, limite=40)
+    assert primeira not in _ids(depois)
+    assert [(s.obra_id, s.pontuacao) for s in depois.sugestoes] == [
+        (s.obra_id, s.pontuacao) for s in antes.sugestoes[1:]
+    ]
+    desfazer_dispensa(conexao, LEITOR_ID, primeira)
+    assert _ids(para_voce(conexao, LEITOR_ID, limite=40)) == _ids(antes)
+
+
+def test_obra_em_quero_ler_sai_de_para_voce(conexao, catalogo) -> None:
+    obras = catalogo["obras"]
+    for o in obras[:3]:
+        _ler(conexao, o, 5)
+    primeira = para_voce(conexao, LEITOR_ID).sugestoes[0].obra_id
+
+    salvar_quero_ler(conexao, LEITOR_ID, primeira, posicao=1)
+
+    assert primeira not in _ids(para_voce(conexao, LEITOR_ID))
+
+
+def test_filtros_nao_mudam_a_pontuacao_nem_a_ordem(conexao, catalogo) -> None:
+    """Critério do R10: o filtro só esconde itens. Ele vem antes do limite, e a lista
+    filtrada não fica curta."""
+    obras = catalogo["obras"]
+    for o in (obras[0], obras[10], obras[20]):
+        _ler(conexao, o, 5)
+    fantasia, terror = criar_genero(conexao, "fantasia"), criar_genero(conexao, "terror")
+    de_fantasia = set(obras[5:10] + obras[15:20] + obras[25:28])
+    for o in de_fantasia:
+        ligar_genero(conexao, o, fantasia)
+    for o in obras[21:24]:
+        ligar_genero(conexao, o, terror)
+    em_pt = set(obras[1:40:3])
+    conexao.execute(
+        text("UPDATE obra SET tem_edicao_pt = true WHERE id = ANY(:o)"), {"o": list(em_pt)}
+    )
+    tudo = para_voce(conexao, LEITOR_ID, limite=40).sugestoes
+
+    def filtrada(**filtros) -> list[tuple[int, float]]:
+        r = para_voce(conexao, LEITOR_ID, limite=5, **filtros)
+        return [(s.obra_id, s.pontuacao) for s in r.sugestoes]
+
+    def esperada(passa) -> list[tuple[int, float]]:
+        return [(s.obra_id, s.pontuacao) for s in tudo if passa(s.obra_id)][:5]
+
+    assert filtrada(generos=("fantasia",)) == esperada(lambda o: o in de_fantasia)
+    assert len(filtrada(generos=("fantasia",))) == 5
+    assert filtrada(generos=("fantasia", "terror")) == esperada(
+        lambda o: o in de_fantasia or o in obras[21:24]
+    )
+    assert filtrada(so_edicao_pt=True) == esperada(lambda o: o in em_pt)
+    assert filtrada(generos=("fantasia",), so_edicao_pt=True) == esperada(
+        lambda o: o in de_fantasia and o in em_pt
+    )
+    assert filtrada(generos=()) == esperada(lambda o: True)
+
+
+def test_motivo_detalhado_traz_os_3_maiores_contribuintes(conexao, catalogo) -> None:
+    """Critério do R11: os 3 maiores Contribuintes, com a participação de cada um."""
+    obras = catalogo["obras"]
+    estante = {obras[0]: 5, obras[1]: 4, obras[2]: 5, obras[3]: 4, obras[4]: 1}
+    for o, nota in estante.items():
+        _ler(conexao, o, nota)
+    alvo = obras[9]
+
+    s = next(s for s in para_voce(conexao, LEITOR_ID).sugestoes if s.obra_id == alvo)
+
+    parcelas = {
+        r: PESO_DA_NOTA[estante[r]] * sim
+        for r, sim in conexao.execute(
+            text(
+                "SELECT obra_id, similaridade FROM vizinho "
+                "WHERE execucao_id = :e AND vizinho_id = :c AND obra_id = ANY(:r)"
+            ),
+            {"e": catalogo["ativa"], "c": alvo, "r": list(estante)},
+        )
+    }
+    positivas = {r: p for r, p in parcelas.items() if p > 0}
+    assert len(positivas) == 4  # o quarto fica de fora
+    # Empate de parcela (Obras 0-0 e 0-2, ambas com Nota 5): vale a de menor id.
+    maiores = sorted(positivas, key=lambda r: (-positivas[r], r))[:3]
+    assert [c.obra_id for c in s.contribuintes] == maiores
+    assert s.contribuintes[0].obra_id == s.motivo_obra_id
+    assert [c.nota for c in s.contribuintes] == [estante[r] for r in maiores]
+    assert [c.titulo_exibicao for c in s.contribuintes] == [
+        f"Obra 0-{obras.index(r)}" for r in maiores
+    ]
+    total = sum(positivas.values())
+    assert [c.participacao for c in s.contribuintes] == pytest.approx(
+        [positivas[r] / total for r in maiores], abs=1e-6
+    )
+
+
 # --- página da Obra ---
 
 
@@ -193,6 +310,19 @@ def test_pagina_da_obra_lida_traz_a_nota(conexao, catalogo) -> None:
     _ler(conexao, catalogo["obras"][0], 5)
     p = pagina_da_obra(conexao, catalogo["obras"][0], LEITOR_ID)
     assert p is not None and p.nota == 5 and p.na_estante
+
+
+def test_pagina_da_obra_dispensada_ou_em_quero_ler(conexao, catalogo) -> None:
+    """A Obra dispensada continua nos Vizinhos das outras (decisão do Leitor, §8.6)."""
+    obras = catalogo["obras"]
+    dispensar(conexao, LEITOR_ID, obras[1])
+    salvar_quero_ler(conexao, LEITOR_ID, obras[2])
+
+    assert pagina_da_obra(conexao, obras[1], LEITOR_ID).dispensada
+    assert pagina_da_obra(conexao, obras[2], LEITOR_ID).quero_ler
+    p = pagina_da_obra(conexao, obras[0], LEITOR_ID)
+    assert not (p.dispensada or p.quero_ler)
+    assert obras[1] in [v.obra_id for v in p.parecidos]
 
 
 def test_pagina_de_obra_inexistente(conexao, catalogo) -> None:

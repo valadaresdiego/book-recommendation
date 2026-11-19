@@ -174,3 +174,91 @@ def test_pagina_da_obra(conexao: Connection) -> None:
     assert [r for r in rotulos if r.startswith("Livro")] == [f"Livro {i}" for i in range(1, 6)]
     assert any("✅ lido" in c.value for c in at.caption)
     assert "Ainda não há dados de outros leitores para este livro" in [c.value for c in at.caption]
+
+
+# --- fase 4: Quero ler, Dispensa, filtros e Motivo detalhado (SPEC §8.6) ---
+
+
+def _para_voce_com_3_notas(conexao: Connection) -> list[int]:
+    obras = _catalogo_com_vizinhos(conexao)
+    for o, nota in zip(obras[:3], (5, 4, 5), strict=True):
+        estante.adicionar(conexao, LEITOR_ID, o, nota, origem="busca")
+    return obras
+
+
+def _titulos_em_para_voce(at: AppTest) -> list[str]:
+    return [b.label for b in at.button if b.label.startswith("**Livro")]
+
+
+def test_quero_ler_tira_de_para_voce_e_entra_na_lista(conexao: Connection) -> None:
+    obras = _para_voce_com_3_notas(conexao)
+    at = _pagina("para_voce").run()
+    assert _titulos_em_para_voce(at) == ["**Livro 3**", "**Livro 4**", "**Livro 5**"]
+
+    at.button(key=f"pv-{obras[3]}-quero").click().run()
+
+    assert not at.exception
+    assert _titulos_em_para_voce(at) == ["**Livro 4**", "**Livro 5**"]
+    posicao = conexao.execute(
+        text("SELECT posicao FROM quero_ler WHERE obra_id = :o"), {"o": obras[3]}
+    ).scalar_one()
+    assert posicao == 1
+
+    lista = _pagina("quero_ler").run()
+    assert not lista.exception
+    assert "**Livro 3**" in [b.label for b in lista.button]
+    assert "Tirar da lista" in [b.label for b in lista.button]
+
+
+def test_quero_ler_vazia_mostra_a_chamada() -> None:
+    at = _pagina("quero_ler").run()
+
+    assert not at.exception
+    assert "Sua lista Quero ler está vazia" in at.info[0].value
+
+
+def test_nao_tenho_interesse_dispensa_a_sugestao(conexao: Connection) -> None:
+    obras = _para_voce_com_3_notas(conexao)
+    at = _pagina("para_voce").run()
+
+    at.button(key=f"pv-{obras[4]}-dispensar").click().run()
+
+    assert not at.exception
+    assert _titulos_em_para_voce(at) == ["**Livro 3**", "**Livro 5**"]
+    dados = conexao.execute(
+        text("SELECT dados FROM evento WHERE tipo = 'sugestao_dispensada'")
+    ).scalar_one()
+    assert dados == {"posicao": 2}
+
+
+def test_filtro_de_genero_e_motivo_detalhado(conexao: Connection) -> None:
+    obras = _para_voce_com_3_notas(conexao)
+    fantasia = criar_genero(conexao, "fantasia", "Fantasia")
+    ligar_genero(conexao, obras[4], fantasia)
+    at = _pagina("para_voce")
+    at.session_state["pv-generos"] = ["fantasia"]
+    at.run()
+
+    assert not at.exception
+    assert _titulos_em_para_voce(at) == ["**Livro 4**"]
+    detalhe = [m.value for m in at.markdown if ", sua nota " in m.value]
+    assert len(detalhe) == 3
+    assert detalhe[0].startswith("*Livro 0*, sua nota 5: ")
+    assert all(d.endswith(" %") for d in detalhe)
+
+
+def test_pagina_da_obra_dispensada_oferece_desfazer(conexao: Connection) -> None:
+    obras = _catalogo_com_vizinhos(conexao)
+    estante.dispensar(conexao, LEITOR_ID, obras[2])
+    at = _pagina("obra")
+    at.query_params["obra"] = str(obras[2])
+    at.run()
+
+    assert not at.exception
+    assert at.warning[0].value == "Você dispensou este livro de Para você."
+
+    at.button(key=f"obra-{obras[2]}-desfazer").click().run()
+
+    assert not at.exception
+    assert not at.warning
+    assert not estante.dispensada(conexao, LEITOR_ID, obras[2])
