@@ -9,7 +9,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.fontes import FonteIndisponivel
 from recomendador.catalogo.fontes.google_books import GoogleBooks
 from recomendador.catalogo.isbn import normalizar_isbn, parece_isbn
-from recomendador.catalogo.texto import palavras_da_busca
+from recomendador.catalogo.texto import palavras_da_busca, separar_editora
 from recomendador.catalogo.tipos import ResultadoBusca
 
 log = logging.getLogger(__name__)
@@ -163,12 +163,16 @@ def buscar(conn: Connection, texto: str, google: GoogleBooks | None) -> Busca:
 
     Se o Google Books não responder a tempo, devolve só o Catálogo e marca
     `google_indisponivel`, para a UI mostrar um aviso discreto.
+
+    Com o filtro `editora:`, só o Google Books busca: o Catálogo não sabe a editora das
+    Obras. As Edições que ele trouxer e cujo ISBN está no Catálogo continuam fundidas.
     """
     texto = " ".join(texto.split())
-    if not texto:
+    livre, editora = separar_editora(texto)
+    if not livre and not editora:
         return Busca([])
     pedido = _executor.submit(google.buscar, texto) if google else None
-    locais = buscar_no_catalogo(conn, texto)
+    locais = [] if editora else buscar_no_catalogo(conn, livre)
     if pedido is None:
         return Busca(locais)
     try:

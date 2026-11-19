@@ -186,7 +186,7 @@ Decisões do modelo:
 | Open Library (API) | Resolver a Edição escolhida na busca e enriquecer as Obras adicionadas pelo Leitor | `/isbn/{isbn}.json`, `/works/{key}.json`, com `User-Agent` identificado | Máx. 1 req/s, garantido por um limitador no cliente. Usar só para o volume de um Leitor. |
 | Google Books | Busca do R1 | `GET /books/v1/volumes?q=…&maxResults=20&printType=books&key=…` | Cache só durante a sessão (TTL de 1 h, `st.cache_data`). O que é persistido em `edicao` e `obra` vem de preferência da Open Library, e a capa entra por URL (ver research/fontes-de-dados.md). |
 
-Os clientes ficam em `catalogo/fontes/`. Eles têm timeout (1,8 s na busca do Google Books, para a busca inteira caber em 2 s; 10 s na Open Library) e devolvem tipos próprios (`ResultadoBusca`, `EdicaoOL`, `ObraOL`), nunca o JSON cru.
+Os clientes ficam em `catalogo/fontes/`. Eles têm timeout (4 s na busca do Google Books, §7.1; 10 s na Open Library) e devolvem tipos próprios (`ResultadoBusca`, `EdicaoOL`, `ObraOL`), nunca o JSON cru.
 
 ---
 
@@ -274,9 +274,9 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
 1. **Catálogo local**: busca por trigram em `titulo`, `titulo_original`, `titulo_exibicao` e `autores`, mais igualdade em `obra_isbn` se o texto for um ISBN. Resultados marcados como "no catálogo", sem precisar de resolução.
    - Títulos e autores vão num texto só, em minúsculas e sem acento (`obra_texto_busca`, com `unaccent`, migração 0003), com um índice GIN trigram. "fundacao asimov" acha *Fundação*.
    - Cada palavra útil da busca (sem "de", "o", "the"…) é comparada com esse texto por `word_similarity`, e a semelhança da Obra é a média entre as palavras (mínimo 0,5). "duna herbert" precisa casar com as duas palavras: *Lincoln*, de David **Herbert** Donald, fica abaixo de *Duna*. Empates vão para a mais popular.
-2. **Google Books**: `q` montado por heurística. Texto com só dígitos e hífens de 10 ou 13 dígitos vira `isbn:…`; o resto vai como texto livre. Resultados cujo ISBN já está em `obra_isbn` são fundidos ao item do catálogo correspondente: uma Edição em português toma o lugar dele (é o título que o Leitor reconhece); em outro idioma, o item do Catálogo fica como está, sem repetir a Obra.
+2. **Google Books**: `q` montado por heurística. Texto com só dígitos e hífens de 10 ou 13 dígitos vira `isbn:…`; o resto vai como texto livre. O filtro `editora:` vira `inpublisher:` (`editora:packt django` → `django inpublisher:packt`; com aspas, a editora pode ter mais de uma palavra: `editora:"alta books" python`). Com ele, o Catálogo local não busca, porque não sabe a editora das Obras; as Edições do Google cujo ISBN está no Catálogo continuam fundidas. Resultados cujo ISBN já está em `obra_isbn` são fundidos ao item do catálogo correspondente: uma Edição em português toma o lugar dele (é o título que o Leitor reconhece); em outro idioma, o item do Catálogo fica como está, sem repetir a Obra.
 
-A lista mostra primeiro os itens do catálogo e depois os do Google Books, com capa, título, autor e ano. Meta: **≤ 2 s no p95**. Se o Google Books estourar o timeout, mostra só os resultados locais e um aviso discreto.
+A lista mostra primeiro os itens do catálogo e depois os do Google Books, com capa, título, autor e ano. Meta: **≤ 2 s no p95** para o Catálogo local; o Google Books tem até **4 s**. Em 19/11/2026, buscas de livros técnicos (`o'reilly`, `django 4 by example`, `designing data-intensive applications`) levaram de 1,8 a 2,3 s, e o limite antigo de 1,8 s descartava todas. Se o Google Books estourar o timeout, mostra só os resultados locais e um aviso discreto.
 
 ### 7.2 Resolução Edição → Obra
 
@@ -611,7 +611,7 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | Fase | Entrega | Pronto quando |
 |---|---|---|
 | **0. Fundação** | docker compose, esquema, `carregar-base`, `enriquecer-ol`, `mapear-generos`, `abrir.cmd` | Catálogo com 10 mil Obras; % de `ol_work_key`, de descrição e de título em português registrados no log; ≥ 90 % das Obras com algum Gênero; abrir `scripts/abrir.cmd` com o Docker Desktop fechado sobe o banco e o app e abre `127.0.0.1:8501` no navegador |
-| **1. Estante** | R1, R2, R3, Montagem da Estante, Eventos | Critérios de R1 a R3 do PRD; busca ≤ 2 s p95; os 4 caminhos do §7.2 cobertos por teste; adicionar + dar Nota < 30 s (medido pelo evento `leitura_salva`) |
+| **1. Estante** | R1, R2, R3, Montagem da Estante, Eventos | Critérios de R1 a R3 do PRD; busca ≤ 2 s p95 no Catálogo local (o Google Books tem até 4 s, §7.1); os 4 caminhos do §7.2 cobertos por teste; adicionar + dar Nota < 30 s (medido pelo evento `leitura_salva`) |
 | **2. Parecidos** | Bake-off (ADR 0006), R5 + R5a, R4 com α = 1, avaliação offline | NDCG@20 só com conteúdo > baseline de popularidade; ≥ 80 % das Leituras com R5a preenchido (O4); com 5 Notas, ≥ 10 Sugestões (O1) |
 | **3. Coleitura** | R5b, R4 completo, calibração de α | NDCG@20 combinado ≥ o melhor dos dois isolados; **taxa de correspondência das Leituras com Obras `origem='base'` ≥ 40 %**, senão reabrir a escolha da Base de coleitura (PRD §9); ≥ 40 % das Leituras com R5b preenchido (O4) |
 | **4. Ajustes** | R7, R8, R10, R11 (§8.6), migração 0006, `tem_edicao_pt` no `enriquecer-ol` | Critérios de R7, R8, R10 e R11 do PRD cobertos por teste contra o banco real; o teste de paridade SQL × avaliação inalterado; a consulta do O2 (salvas ÷ (salvas + dispensadas) nas top 10) em `reports/consultas-metricas.sql`; `enriquecer-ol` rodado de novo no banco do app, com a contagem de `tem_edicao_pt` no log |

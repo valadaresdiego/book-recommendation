@@ -10,6 +10,8 @@ PALAVRAS_VAZIAS = frozenset(
 )
 # Sufixos que não são sobrenome ("Itamar Vieira Junior", "Martin Luther King Jr.").
 _SUFIXOS = frozenset("jr junior filho neto sobrinho sr ii iii iv".split())
+# O filtro de editora da busca (SPEC §7.1), com aspas retas ou curvas para mais de uma palavra.
+_RE_EDITORA = re.compile(r'\beditora:\s*(?:"([^"]*)"|“([^”]*)”|(\S+))', re.IGNORECASE)
 
 
 def normalizar(texto: str) -> str:
@@ -26,6 +28,20 @@ def palavras_da_busca(texto: str) -> list[str]:
     todas = list(dict.fromkeys(normalizar(texto).split()))
     uteis = [p for p in todas if p not in PALAVRAS_VAZIAS]
     return uteis or todas
+
+
+def separar_editora(texto: str) -> tuple[str, str | None]:
+    """Tira da busca o filtro `editora:` e devolve (o resto do texto, a editora).
+
+    Sem aspas, a editora é uma palavra (`editora:packt django`); com aspas, pode ter mais
+    (`editora:"alta books" python`). Sem o filtro, devolve o texto como veio e `None`.
+    """
+    achado = _RE_EDITORA.search(texto)
+    if achado is None:
+        return texto, None
+    editora = next(g for g in achado.groups() if g is not None).strip()
+    resto = " ".join((texto[: achado.start()] + " " + texto[achado.end() :]).split())
+    return resto, editora or None
 
 
 def sobrenome(nome: str) -> str | None:
