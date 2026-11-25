@@ -140,6 +140,22 @@ def test_obra_tecnica_nova_espera_o_codificador(
     )
 
 
+def test_obra_tecnica_do_leitor_continua_pendente_para_o_app(
+    conexao: Connection, catalogo: dict[str, int], conteudo: int
+) -> None:
+    """§8.8: o `calcular-tecnico` só gera embedding das Obras `open_library`. A do Leitor
+    fica pendente, para o app ou o `atualizar` gerar também os Vizinhos de conteúdo dela."""
+    from recomendador.recomendacao import pendente
+
+    do_leitor = _obra(conexao, "Ruido", "Daniel Kahneman", "data statistics", origem="leitor")
+    _tecnica(conexao, do_leitor)
+
+    r = calcular_tecnico(conexao, CodificadorDePalavras(), k=3)
+
+    assert (r.embeddings_novos, r.sem_embedding) == (0, 1)
+    assert pendente(conexao, do_leitor)
+
+
 def test_sem_obras_tecnicas_nao_cria_execucao(conexao: Connection, tmp_path) -> None:
     sincronizar_generos(conexao)
     _obra(conexao, "Dune", "Frank Herbert", "desert")
