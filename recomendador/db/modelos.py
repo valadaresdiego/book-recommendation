@@ -301,8 +301,11 @@ class QueroLer(Base):
         ForeignKey("obra.id", ondelete="CASCADE"), primary_key=True, index=True
     )
     criado_em: Mapped[datetime] = _criado_em()
-    # Posição em "Para você" quando foi salva de lá (O5); nula se veio da página da Obra.
+    # Posição em "Para você" quando foi salva de lá (O5); nula se veio da página da Obra
+    # ou da busca.
     posicao: Mapped[int | None] = mapped_column(SmallInteger)
+    # A Edição escolhida na busca (ADR 0010); vai junto até a Leitura do "Já li".
+    edicao_id: Mapped[int | None] = mapped_column(ForeignKey("edicao.id", ondelete="SET NULL"))
 
 
 class EstouLendo(Base):
@@ -317,6 +320,8 @@ class EstouLendo(Base):
     criado_em: Mapped[datetime] = _criado_em()
     # Posição em "Para você" (O5): a recebida ou, vinda de Quero ler, a guardada lá.
     posicao: Mapped[int | None] = mapped_column(SmallInteger)
+    # A Edição escolhida na busca (ADR 0010); vai junto até a Leitura do "Já li".
+    edicao_id: Mapped[int | None] = mapped_column(ForeignKey("edicao.id", ondelete="SET NULL"))
 
 
 class ConfigApp(Base):

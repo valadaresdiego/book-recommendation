@@ -54,7 +54,7 @@ O conjunto das Leituras de um Leitor.
 _Evite_: biblioteca, coleção, lidos
 
 **Quero ler**:
-A lista das Obras que o Leitor guardou para ler depois, separada da Estante. Uma Obra sai dela quando vira Leitura ("Já li"), quando passa para Estou lendo ou quando o Leitor a tira da lista.
+A lista das Obras que o Leitor guardou para ler depois, separada da Estante. Elas vêm de uma Sugestão, da página da Obra ou da busca. Uma Obra sai dela quando vira Leitura ("Já li"), quando passa para Estou lendo ou quando o Leitor a tira da lista.
 _Evite_: lista de desejos, wishlist, favoritos, "para ler"
 
 **Estou lendo**:

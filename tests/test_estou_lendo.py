@@ -1,7 +1,7 @@
 """Estou lendo (R13), da fase 5 (SPEC §8.7, ADR 0008), contra o banco real."""
 
 import pytest
-from fabricas import criar_obra
+from fabricas import criar_edicao, criar_obra
 from sqlalchemy import Connection, text
 
 from recomendador.config import LEITOR_ID
@@ -122,3 +122,25 @@ def test_parei_de_ler(conexao, duna) -> None:
     tirar_de_estou_lendo(conexao, LEITOR_ID, duna)
     assert listar_estou_lendo(conexao, LEITOR_ID) == []
     assert not na_lista_quero_ler(conexao, LEITOR_ID, duna)
+
+
+def test_a_edicao_vai_de_quero_ler_a_estou_lendo_e_a_leitura(conexao, duna) -> None:
+    """A Edição escolhida na busca acompanha a Obra até a Leitura (ADR 0010)."""
+    edicao = criar_edicao(conexao, duna, "Duna", capa_url="https://capa/duna-aleph.jpg")
+    salvar_quero_ler(conexao, LEITOR_ID, duna, edicao_id=edicao)
+
+    salvar_estou_lendo(conexao, LEITOR_ID, duna)
+    [item] = listar_estou_lendo(conexao, LEITOR_ID)
+    assert item.capa_url == "https://capa/duna-aleph.jpg"
+
+    assert adicionar(conexao, LEITOR_ID, duna, 4, origem="catalogo").edicao_id == edicao
+
+
+def test_voltar_para_quero_ler_leva_a_edicao(conexao, duna) -> None:
+    edicao = criar_edicao(conexao, duna, "Duna")
+    salvar_quero_ler(conexao, LEITOR_ID, duna, edicao_id=edicao)
+    salvar_estou_lendo(conexao, LEITOR_ID, duna)
+
+    salvar_quero_ler(conexao, LEITOR_ID, duna)
+
+    assert adicionar(conexao, LEITOR_ID, duna, 4, origem="catalogo").edicao_id == edicao

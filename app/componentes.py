@@ -1,8 +1,11 @@
 """Peças da UI usadas por mais de uma página. Só chama o que `catalogo` e `estante` exportam."""
 
 import time
+from collections.abc import Callable
+from typing import Literal
 
 import streamlit as st
+from sqlalchemy import Connection
 
 from recomendador import catalogo, estante, recomendacao
 
@@ -30,14 +33,18 @@ def _buscar(texto: str) -> catalogo.Busca:
         return catalogo.buscar(conn, texto, catalogo.google_books())
 
 
-# --- Busca → escolha → "É uma destas?" → Nota → salvar (R1 + R2) ---
+# --- Busca → escolha → "É uma destas?" → Nota → salvar (R1 + R2), ou Quero ler (R8) ---
+
+# `os_dois`: Estante (com Nota) ou Quero ler; `quero_ler`: só Quero ler, sem estrelas.
+Destino = Literal["os_dois", "quero_ler"]
 
 
 class _Estado:
     """As chaves de `st.session_state` de um fluxo de busca, separadas por página."""
 
-    def __init__(self, prefixo: str) -> None:
+    def __init__(self, prefixo: str, destino: Destino = "os_dois") -> None:
         self.p = prefixo
+        self.destino = destino
 
     def __getitem__(self, nome: str):
         return st.session_state.get(f"{self.p}-{nome}")
@@ -55,9 +62,15 @@ class _Estado:
         st.session_state.pop(self.chave("original"), None)
 
 
-def busca_e_adicionar(prefixo: str) -> None:
-    """O fluxo do R1 inteiro. `prefixo` separa o estado de cada página que o usa."""
-    estado = _Estado(prefixo)
+def busca_tem_aviso(prefixo: str) -> bool:
+    """Se a busca acabou de salvar e tem a mensagem para mostrar (a página deixa a busca aberta)."""
+    return _Estado(prefixo).chave("salvo") in st.session_state
+
+
+def busca_e_adicionar(prefixo: str, destino: Destino = "os_dois") -> None:
+    """O fluxo do R1 inteiro, que termina na Estante ou em Quero ler (R8) conforme o
+    `destino`. `prefixo` separa o estado de cada página que o usa."""
+    estado = _Estado(prefixo, destino)
     if aviso := st.session_state.pop(estado.chave("salvo"), None):
         st.success(aviso, icon="✅")
 
@@ -157,15 +170,26 @@ def _confirmar(estado: _Estado) -> None:
     r: catalogo.Resolucao = estado["resolucao"]
     _resumo_escolhido(r)
 
+    so_quero_ler = estado.destino == "quero_ler"
+    na_lista = None
     if r.encontrou:
         with estante.transacao() as conn:
             item = estante.leitura_da_obra(conn, LEITOR, r.obra_id)
+            na_lista = estante.quero_ler_da_obra(conn, LEITOR, r.obra_id)
+        recusa = None
         if item is not None:
-            st.warning(str(estante.JaNaEstante(item)), icon="📚")
+            recusa = estante.JaNaEstante(item)
+        elif na_lista is not None and so_quero_ler:
+            recusa = estante.JaEmQueroLer(na_lista)
+        if recusa is not None:
+            st.warning(str(recusa), icon="📚")
             if st.button("Nova busca", key=estado.chave("de-novo")):
                 estado.recomecar()
                 st.rerun()
             return
+        if na_lista is not None:
+            # Já guardada: ainda dá para marcar como lida, mas não guardar de novo.
+            st.info(f"{na_lista.titulo} já está na sua lista Quero ler.", icon="🔖")
 
     escolha = None
     if r.obra_nova is not None:
@@ -173,15 +197,31 @@ def _confirmar(estado: _Estado) -> None:
     else:
         st.caption(f"Obra identificada no Catálogo {_COMO[r.confianca]}.")
 
-    st.markdown("**Sua nota**")
-    estrelas = st.feedback("stars", key=estado.chave("nota"))
-    st.caption("Pode deixar sem nota: a Leitura fica na Estante, mas não entra nas sugestões.")
+    estrelas = None
+    if not so_quero_ler:
+        st.markdown("**Sua nota**")
+        estrelas = st.feedback("stars", key=estado.chave("nota"))
+        st.caption(
+            "Pode deixar sem nota: a Leitura fica na Estante, mas não entra nas sugestões. "
+            "Ainda não leu? Guarde em Quero ler."
+        )
 
-    salvar, cancelar = st.columns([1, 1])
-    if cancelar.button("Cancelar", key=estado.chave("cancelar"), use_container_width=True):
+    botoes = ([] if so_quero_ler else ["salvar"]) + ([] if na_lista else ["quero"])
+    colunas = dict(zip([*botoes, "cancelar"], st.columns(len(botoes) + 1), strict=True))
+    if colunas["cancelar"].button(
+        "Cancelar", key=estado.chave("cancelar"), use_container_width=True
+    ):
         estado.recomecar()
         st.rerun()
-    if salvar.button(
+    if "quero" in colunas and colunas["quero"].button(
+        "Quero ler",
+        key=estado.chave("quero"),
+        icon="🔖",
+        type="primary" if so_quero_ler else "secondary",
+        use_container_width=True,
+    ):
+        _guardar_em_quero_ler(estado, r, escolha)
+    if "salvar" in colunas and colunas["salvar"].button(
         "Salvar na Estante", key=estado.chave("salvar"), type="primary", use_container_width=True
     ):
         _salvar(estado, r, escolha, None if estrelas is None else estrelas + 1)
@@ -227,36 +267,66 @@ def _e_uma_destas(estado: _Estado, r: catalogo.Resolucao) -> int | None:
     return None
 
 
-def _salvar(estado: _Estado, r: catalogo.Resolucao, escolha: int | None, nota: int | None) -> None:
-    inicio = estado["inicio"]
-    duracao = round(time.monotonic() - inicio, 1) if inicio else None
+def _gravar(
+    estado: _Estado,
+    r: catalogo.Resolucao,
+    escolha: int | None,
+    guardar: Callable[[Connection, catalogo.ObraRegistrada], str],
+) -> None:
+    """Grava a resolução e o destino numa transação só; `guardar` devolve a mensagem.
+
+    Se o destino recusa (`JaNaEstante`, `JaEmQueroLer`), a transação é desfeita: nem a
+    Edição nem a Obra nova ficam gravadas (R1). Depois, os Parecidos da Obra do Leitor.
+    """
     original = st.session_state.get(estado.chave("original"))
     try:
         with catalogo.transacao() as conn:
             if escolha is None and original:
                 r = catalogo.informar_titulo_original(conn, r, original)
             registrada = catalogo.registrar_resolucao(conn, r, escolha=escolha)
-            estante.adicionar(
-                conn,
-                LEITOR,
-                registrada.obra_id,
-                nota,
-                origem="manual" if r.edicao is None else "busca",
-                edicao_id=registrada.edicao_id,
-                duracao_s=duracao,
-            )
-            item = estante.leitura_da_obra(conn, LEITOR, registrada.obra_id)
-    except estante.JaNaEstante as e:
-        # A transação foi desfeita: nem a Edição nem a Obra nova ficam gravadas (R1).
+            aviso = guardar(conn, registrada)
+    except (estante.JaNaEstante, estante.JaEmQueroLer) as e:
         st.warning(str(e), icon="📚")
         return
     depois_de_gravar()
     calcular_parecidos(registrada.obra_id)
     estado.recomecar()
     estado["inicio"] = None
-    nota_txt = f" com nota {nota}" if nota else " sem nota"
-    st.session_state[estado.chave("salvo")] = f"{item.titulo} entrou na Estante{nota_txt}."
+    st.session_state[estado.chave("salvo")] = aviso
     st.rerun()
+
+
+def _salvar(estado: _Estado, r: catalogo.Resolucao, escolha: int | None, nota: int | None) -> None:
+    inicio = estado["inicio"]
+    duracao = round(time.monotonic() - inicio, 1) if inicio else None
+
+    def na_estante(conn, registrada: catalogo.ObraRegistrada) -> str:
+        estante.adicionar(
+            conn,
+            LEITOR,
+            registrada.obra_id,
+            nota,
+            origem="manual" if r.edicao is None else "busca",
+            edicao_id=registrada.edicao_id,
+            duracao_s=duracao,
+        )
+        item = estante.leitura_da_obra(conn, LEITOR, registrada.obra_id)
+        nota_txt = f" com nota {nota}" if nota else " sem nota"
+        return f"{item.titulo} entrou na Estante{nota_txt}."
+
+    _gravar(estado, r, escolha, na_estante)
+
+
+def _guardar_em_quero_ler(estado: _Estado, r: catalogo.Resolucao, escolha: int | None) -> None:
+    """Um livro buscado vai para Quero ler sem Nota e sem posição (fora do O2), com a
+    Edição escolhida, que o "Já li" leva para a Leitura (ADR 0010)."""
+
+    def em_quero_ler(conn, registrada: catalogo.ObraRegistrada) -> str:
+        estante.salvar_quero_ler(conn, LEITOR, registrada.obra_id, edicao_id=registrada.edicao_id)
+        item = estante.quero_ler_da_obra(conn, LEITOR, registrada.obra_id)
+        return f"{item.titulo} entrou na sua lista Quero ler."
+
+    _gravar(estado, r, escolha, em_quero_ler)
 
 
 # --- Embedding de uma Obra do Leitor, na hora (SPEC §7.3) ---
@@ -319,7 +389,7 @@ def quero_ler(obra_id: int, titulo: str, chave: str) -> None:
             estante.salvar_quero_ler(
                 conn, LEITOR, obra_id, posicao_da_sugestao(obra_id), lista_da_sugestao(obra_id)
             )
-    except estante.JaNaEstante as e:
+    except (estante.JaNaEstante, estante.JaEmQueroLer) as e:
         st.warning(str(e), icon="📚")
         return
     depois_de_gravar()
