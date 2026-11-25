@@ -222,6 +222,57 @@ def test_aba_tecnologia_sugere_so_obras_tecnicas(
     assert tecnico not in para_voce(conexao, LEITOR_ID).execucoes
 
 
+def test_aba_tecnologia_so_conta_as_leituras_tecnicas(
+    conexao: Connection, catalogo: dict[str, int], conteudo: int
+) -> None:
+    """Decisão do Leitor (25/11/2026): com uma Leitura técnica de Nota alta, só as Leituras
+    técnicas são Contribuintes na aba. As outras não somam nem tiram pontos."""
+    from recomendador.config import LEITOR_ID
+    from recomendador.recomendacao import para_voce_tecnologia
+
+    _notas(
+        conexao,
+        {
+            catalogo["duna"]: 5,
+            catalogo["fundacao"]: 4,
+            catalogo["rapido"]: 5,
+            catalogo["pragmatico"]: 4,
+        },
+    )
+
+    r = para_voce_tecnologia(conexao, LEITOR_ID)
+
+    assert r.sugestoes
+    contribuintes = {c.obra_id for s in r.sugestoes for c in s.contribuintes}
+    assert contribuintes == {catalogo["pragmatico"]}
+    # A ordem é a dos Vizinhos técnicos da Obra técnica, sem a Leitura de estatística.
+    assert r.sugestoes[0].obra_id == catalogo["clean"]
+
+
+def test_aba_tecnologia_sem_leitura_tecnica_boa_conta_todas(
+    conexao: Connection, catalogo: dict[str, int], conteudo: int
+) -> None:
+    """R14: sem Leitura técnica de Nota alta, a aba usa todas as Leituras com Nota."""
+    from recomendador.config import LEITOR_ID
+    from recomendador.recomendacao import para_voce_tecnologia
+
+    _notas(
+        conexao,
+        {
+            catalogo["duna"]: 5,
+            catalogo["fundacao"]: 4,
+            catalogo["rapido"]: 5,
+            catalogo["pragmatico"]: 1,
+        },
+    )
+
+    r = para_voce_tecnologia(conexao, LEITOR_ID)
+
+    motivos = {s.motivo_obra_id for s in r.sugestoes}
+    assert catalogo["rapido"] in motivos
+    assert catalogo["pragmatico"] not in motivos
+
+
 def test_lista_geral_nunca_traz_obra_da_open_library(
     conexao: Connection, catalogo: dict[str, int], conteudo: int
 ) -> None:

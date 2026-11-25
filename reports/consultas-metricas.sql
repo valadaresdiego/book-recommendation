@@ -104,11 +104,16 @@ FROM leitura l JOIN obra o ON o.id = l.obra_id
 WHERE l.leitor_id = :leitor;
 
 -- O4: Leituras com R5a ("Parecidos com este", meta ≥ 80 %) e R5b ("Quem leu este também
--- gostou", meta ≥ 40 %) preenchidos, pelas execuções ativas de cada tipo.
+-- gostou", meta ≥ 40 %) preenchidos, pelas execuções ativas de cada tipo. Numa Obra técnica,
+-- o R5a vem da execução `tecnico` (SPEC §8.3); sem ela, dos Vizinhos de conteúdo.
 SELECT count(*) AS leituras,
        round(100.0 * count(*) FILTER (WHERE EXISTS (
            SELECT 1 FROM vizinho v JOIN execucao_modelo e ON e.id = v.execucao_id
-           WHERE v.obra_id = l.obra_id AND e.ativa AND e.tipo = 'conteudo'
+           WHERE v.obra_id = l.obra_id AND e.ativa
+             AND (e.tipo = 'conteudo' OR (e.tipo = 'tecnico' AND EXISTS (
+                 SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+                 WHERE og.obra_id = l.obra_id AND g.slug = 'tecnologia'
+             )))
        )) / nullif(count(*), 0), 1) AS pct_r5a,
        round(100.0 * count(*) FILTER (WHERE EXISTS (
            SELECT 1 FROM vizinho v JOIN execucao_modelo e ON e.id = v.execucao_id

@@ -19,7 +19,7 @@ Contar só Edições (≥ 5) foi rejeitado: tirava os lançamentos (*AI Engineer
 
 ## Como são sugeridas
 
-- **Só conteúdo.** As Obras novas não têm Coleitura nem Notas na Base. Na aba "Tecnologia", a pontuação é a do §8.5 da SPEC com α = 1 e β = 0, sobre os Vizinhos de uma execução própria, de tipo `tecnico`. Ela liga cada Obra do Catálogo às Obras técnicas mais parecidas. Qualquer Leitura com Nota pode ser o Motivo.
+- **Só conteúdo.** As Obras novas não têm Coleitura nem Notas na Base. Na aba "Tecnologia", a pontuação é a do §8.5 da SPEC com α = 1 e β = 0, sobre os Vizinhos de uma execução própria, de tipo `tecnico`. Ela liga cada Obra do Catálogo às Obras técnicas mais parecidas. Qualquer Leitura com Nota podia ser o Motivo; desde 25/11/2026, ver a atualização no fim.
 - **A lista geral não muda.** As Obras da Open Library não entram como Vizinho na execução de conteúdo de sempre. Assim, a lista geral e a calibração da Fase 3 (ADR 0007) ficam como estavam. As Obras técnicas da Base aparecem nas duas abas.
 - **Sem popularidade.** A `popularidade` continua sendo o nº de Notas na Base de coleitura, e as Obras novas ficam com 0. O nº de Edições na Open Library serve para escolher as Obras e para ordenar a Montagem da Estante, nunca para pontuar Sugestões.
 
@@ -38,3 +38,9 @@ Contar só Edições (≥ 5) foi rejeitado: tirava os lançamentos (*AI Engineer
 - Quase nenhuma Obra técnica da Open Library tem Edição em português conhecida (96 de ~94 mil). Com a chave "Só com edição em português", a aba fica curta.
 - A consequência do ADR 0002 ("o app não descobre livros nichados") continua valendo fora da Tecnologia. Para ampliar outro assunto, o caminho é o mesmo: critério de assuntos e de editoras sobre os dumps, mais uma lista curada.
 - Reverter é apagar as Obras de `origem='open_library'` sem Leituras, o Gênero "Tecnologia", a execução `tecnico` e a aba.
+
+## Atualização (25/11/2026): só as Leituras técnicas contribuem
+
+Com 19 Leituras com Nota, 4 técnicas, o topo da aba eram livros de divulgação (*The Design of Everyday Things*, *The Phoenix Project*) com Motivos como *Thinking, Fast and Slow* e *A Arte da Guerra*. As 15 Leituras de negócios e psicologia convergem para os mesmos poucos livros técnicos e somam mais que as 4 técnicas, embora estas sejam bem mais parecidas com as Obras técnicas (similaridade média 0,69 contra 0,45).
+
+Decisão do Leitor: na aba, só as Leituras técnicas (do Gênero Tecnologia) são Contribuintes, desde que uma delas tenha Nota ≥ 4. Sem isso, contam todas as Leituras com Nota, como antes, para valer o critério do R14 (3 Notas, nenhuma técnica, ≥ 10 Sugestões). A lista geral não muda.

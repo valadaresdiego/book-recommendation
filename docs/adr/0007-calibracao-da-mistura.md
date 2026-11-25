@@ -76,3 +76,10 @@ O Leitor decidiu voltar o β para 0,25 antes de começar a registrar Leituras, p
 - α, K, λ e a tabela de pesos não mudam.
 - Como o `ativar` só compara execuções avaliadas com o mesmo β, as execuções ativas precisam de um `avaliar` com β = 0,25 antes de uma nova concorrer com elas.
 - Voltar para β = 0 é só mudar `beta_popularidade` na `config`.
+
+## Atualização (25/11/2026): K = 100 no conteúdo e ALS testados
+
+Os dois testes que ficaram de fora acima foram feitos com o protocolo do §9 (`reports/experimento-als-k100-2026-11-25.md`, script `scripts/experimento_als_k100.py`). Nenhum muda a decisão:
+
+- **K = 100 no conteúdo:** piora. Com α = 0,25 e β = 0,25, o NDCG@20 da mistura cai de 0,2967 para 0,2927; o conteúdo sozinho, de 0,1143 para 0,0990. O K = 50 fica.
+- **ALS (`implicit`, CPU) no lugar da Coleitura item-item:** perde em todas as 12 configurações (fatores 64, 128 e 256; regularização 0,01 e 0,1; todas as Notas ou só as ≥ 4; K = 20 ou 50). A melhor mistura com ALS dá 0,2603, contra 0,2967 da item-item. O ALS cobre mais o Catálogo (58 % contra 40 %), mas o critério de entrada é o NDCG@20. O `implicit` não entra nas dependências.

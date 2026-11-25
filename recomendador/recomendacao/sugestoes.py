@@ -12,7 +12,8 @@ por Gênero e por Edição em português (R10) entram depois da pontuação, sem
 Sugestão traz os 3 maiores Contribuintes (R11).
 
 Fase 6 (§8.8, ADR 0009): a aba "Tecnologia" usa a mesma consulta só com a execução
-`tecnico` (α = 1, β = 0). A lista geral usa só as de conteúdo e de Coleitura e nunca traz
+`tecnico` (α = 1, β = 0), e só as Leituras técnicas contribuem, se alguma tem Nota alta.
+A lista geral usa só as de conteúdo e de Coleitura e nunca traz
 uma Obra técnica da Open Library.
 """
 
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.generos import SLUG_TECNOLOGIA
 from recomendador.config import PESO_DA_NOTA, config
 
 CONTRIBUINTES = 3  # do Motivo detalhado (R11)
@@ -70,10 +72,20 @@ _CONSULTA = text(
     WITH pesos AS (
         SELECT * FROM unnest(CAST(:notas AS int[]), CAST(:pesos AS float8[])) AS p(nota, peso)
     ),
-    leituras AS (
-        SELECT l.obra_id, l.nota, p.peso
+    notadas AS (
+        SELECT l.obra_id, l.nota, p.peso,
+               EXISTS (
+                   SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+                   WHERE og.obra_id = l.obra_id AND g.slug = :slug_tecnologia
+               ) AS tecnica
         FROM leitura l JOIN pesos p ON p.nota = l.nota
         WHERE l.leitor_id = :leitor AND p.peso <> 0
+    ),
+    -- Aba "Tecnologia" (§8.8): só as Leituras técnicas, se alguma tem peso positivo.
+    leituras AS (
+        SELECT obra_id, nota, peso FROM notadas
+        WHERE NOT :so_tecnicas OR tecnica
+           OR NOT EXISTS (SELECT 1 FROM notadas WHERE tecnica AND peso > 0)
     ),
     parcelas AS (
         SELECT v.vizinho_id AS candidata, r.obra_id AS motivo, r.nota, r.peso,
@@ -173,8 +185,11 @@ def para_voce_tecnologia(
     conn: Connection, leitor_id: uuid.UUID, limite: int | None = None, *, so_edicao_pt: bool = False
 ) -> ParaVoce:
     """As Sugestões técnicas (aba "Tecnologia", R14, SPEC §8.8): a consulta de `para_voce`
-    só com a execução `tecnico`, sem popularidade (β = 0) e sem filtro de Gênero. Qualquer
-    Leitura com Nota pode ser Contribuinte."""
+    só com a execução `tecnico`, sem popularidade (β = 0) e sem filtro de Gênero.
+
+    Só as Leituras técnicas (do Gênero Tecnologia) são Contribuintes, desde que uma delas
+    tenha peso positivo (Nota ≥ 4). Sem isso, contam todas as Leituras com Nota, para a aba
+    não ficar vazia (R14)."""
     return _sugestoes(
         conn,
         leitor_id,
@@ -183,6 +198,7 @@ def para_voce_tecnologia(
         beta=0.0,
         generos=(),
         so_edicao_pt=so_edicao_pt,
+        so_tecnicas=True,
     )
 
 
@@ -198,6 +214,7 @@ def _sugestoes(
     beta: float,
     generos: Sequence[str],
     so_edicao_pt: bool,
+    so_tecnicas: bool = False,
 ) -> ParaVoce:
     cfg = config()
     notas = conn.execute(
@@ -228,6 +245,8 @@ def _sugestoes(
             "contribuintes": CONTRIBUINTES,
             "generos": list(generos),
             "so_edicao_pt": so_edicao_pt,
+            "so_tecnicas": so_tecnicas,
+            "slug_tecnologia": SLUG_TECNOLOGIA,
             # Só a execução `tecnico` sugere Obras da Open Library (ADR 0009).
             "com_open_library": "tecnico" in tipos,
         },
