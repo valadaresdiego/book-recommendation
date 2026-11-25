@@ -16,7 +16,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.busca import buscar_no_catalogo
 from recomendador.catalogo.fontes import FonteIndisponivel
 from recomendador.catalogo.fontes.open_library import EdicaoOL, ObraOL, OpenLibrary
-from recomendador.catalogo.texto import normalizar, sobrenome, titulo_sem_ruido
+from recomendador.catalogo.texto import chave_do_autor, normalizar, sobrenome, titulo_sem_ruido
 from recomendador.catalogo.tipos import Candidata, ObraProposta, Resolucao, ResultadoBusca
 
 log = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 SEMELHANCA_TITULO_MINIMA = 90  # rapidfuzz.token_set_ratio, regra 3
 MAX_CANDIDATAS = 5
 _CANDIDATAS_DA_REGRA_3 = 50
+_CANDIDATAS_ANTES_DO_AUTOR = 50  # o trigram traz estas; o filtro do autor fica com até 5
 
 
 @dataclass(frozen=True)
@@ -110,11 +111,26 @@ def _por_titulo_original(
 
 
 def _candidatas(conn: Connection, titulo: str, autores: tuple[str, ...]) -> tuple[Candidata, ...]:
-    """As 5 Obras do Catálogo mais próximas por trigram de título e autor."""
-    texto = f"{titulo} {autores[0] if autores else ''}"
+    """As 5 Obras do Catálogo do mesmo autor mais próximas por trigram de título e autor.
+
+    O mesmo autor é o mesmo primeiro nome e sobrenome do 1º autor: o sobrenome sozinho põe
+    Armando Vieira entre as candidatas de *Torto Arado*. Sem autor, valem as Obras que a
+    busca mostraria (semelhança mínima do §7.1).
+    """
+    if autores:
+        alvo = chave_do_autor(autores[0])
+        achadas = [
+            r
+            for r in buscar_no_catalogo(
+                conn, f"{titulo} {autores[0]}", _CANDIDATAS_ANTES_DO_AUTOR, minima=0
+            )
+            if r.autores and chave_do_autor(r.autores[0]) == alvo
+        ]
+    else:
+        achadas = buscar_no_catalogo(conn, titulo, MAX_CANDIDATAS)
     return tuple(
         Candidata(r.obra_id, r.titulo, r.autores, r.ano, r.capa_url)
-        for r in buscar_no_catalogo(conn, texto, MAX_CANDIDATAS, minima=0)
+        for r in achadas[:MAX_CANDIDATAS]
         if r.obra_id is not None
     )
 
@@ -125,7 +141,10 @@ def _proposta(
     titulo_original = (edicao_ol.traducao_de if edicao_ol else None) or (
         edicao_ol.titulos_da_obra[0] if edicao_ol and edicao_ol.titulos_da_obra else None
     )
-    titulo = (obra_ol.titulo if obra_ol else None) or titulo_original or edicao.titulo
+    # O título da Edição vem com o que a livraria pôs no fim ("(Prémio LeYa 2018)").
+    titulo = (
+        (obra_ol.titulo if obra_ol else None) or titulo_original or titulo_sem_ruido(edicao.titulo)
+    )
     em_portugues = edicao.idioma == "pt" or (edicao_ol is not None and "por" in edicao_ol.idiomas)
     return ObraProposta(
         titulo=titulo,
@@ -296,8 +315,8 @@ def registrar_resolucao(
     `edicao`, os ISBNs dela passam a apontar para a Obra com origem `leitor` (a próxima
     busca resolve pela regra 1, e o `enriquecer-ol` não os apaga; um ISBN que já estava
     lá com origem `open_library` também passa a ser do Leitor) e, se a Edição é em
-    português e a Obra ainda não tem título em português,
-    o título dela vira o `titulo_exibicao`.
+    português e a Obra ainda não tem Edição em português, o título dela vira o
+    `titulo_exibicao`.
     """
     if escolha is not None:
         if escolha not in {c.obra_id for c in resolucao.candidatas}:
@@ -325,10 +344,12 @@ def registrar_resolucao(
             [{"i": i, "o": obra_id} for i in edicao.isbns],
         )
     if edicao.idioma == "pt":
+        # Uma Obra que já tem Edição em português já tem o título dela, mesmo igual ao
+        # canônico (*1984*, uma Obra do Leitor como *Torto Arado*): a outra Edição não o troca.
         conn.execute(
             text(
-                "UPDATE obra SET titulo_exibicao = :t "
-                "WHERE id = :o AND titulo_exibicao = titulo AND titulo <> :t"
+                "UPDATE obra SET titulo_exibicao = :t WHERE id = :o "
+                "AND titulo_exibicao = titulo AND NOT tem_edicao_pt AND titulo <> :t"
             ),
             {"t": titulo_sem_ruido(edicao.titulo), "o": obra_id},
         )
