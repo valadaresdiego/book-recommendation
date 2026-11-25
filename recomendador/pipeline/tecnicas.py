@@ -401,12 +401,14 @@ def _gravar(
         conn.execute(text("SELECT ol_work_key, id FROM obra WHERE origem = 'open_library'")).all()
     )
 
-    # ISBNs, assuntos e Gênero das Obras técnicas da Open Library: refeitos a cada carga.
+    # ISBNs e assuntos das Obras desta carga: refeitos. As mantidas em uso ficam com os seus.
     conn.execute(
         text(
             "DELETE FROM obra_isbn i USING obra o WHERE o.id = i.obra_id "
-            "AND o.origem = 'open_library' AND i.origem = 'open_library'"
-        )
+            "AND o.origem = 'open_library' AND i.origem = 'open_library' "
+            "AND o.ol_work_key = ANY(:w)"
+        ),
+        {"w": selecionadas},
     )
     linhas_isbn = {}
     for o in obras:
@@ -424,8 +426,9 @@ def _gravar(
     conn.execute(
         text(
             "DELETE FROM obra_tag t USING obra o "
-            "WHERE o.id = t.obra_id AND o.origem = 'open_library'"
-        )
+            "WHERE o.id = t.obra_id AND o.origem = 'open_library' AND o.ol_work_key = ANY(:w)"
+        ),
+        {"w": selecionadas},
     )
     linhas_tag = [
         {"o": id_por_work[o.work], "t": a} for o in obras for a in dict.fromkeys(o.assuntos)
