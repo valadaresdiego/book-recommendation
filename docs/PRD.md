@@ -119,7 +119,7 @@ Persona única: **o leitor** (eu).
 | Req. | Descrição | Critério principal |
 |------|-----------|--------------------|
 | R7 | **Dispensar sugestão** ("não tenho interesse") | Livro dispensado não volta à lista "Para você" |
-| R8 | **Quero ler**: salvar sugestão numa lista à parte | Lista separada da estante; sai dela quando marco "Já li" |
+| R8 | **Quero ler**: salvar sugestão, ou um livro que busquei, numa lista à parte | Lista separada da estante; sai dela quando marco "Já li"; o livro buscado entra sem Nota |
 | R10 | **Filtros** na lista "Para você" por gênero e idioma | Filtro não recalcula a pontuação, só esconde itens |
 | R11 | **Motivo detalhado**: ver todos os livros lidos que contribuíram para uma sugestão | Lista os 3 maiores contribuintes com peso |
 | R13 | **Estou lendo**: lista das Obras que comecei, sem página nem percentual | Entra por "Para você", Quero ler ou a página do livro; sai de Quero ler ao entrar e sai da lista quando marco "Já li"; não aparece em "Para você" |

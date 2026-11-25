@@ -46,6 +46,18 @@ def criar_obra(
     return obra_id
 
 
+def criar_edicao(
+    conexao: Connection, obra_id: int, titulo: str, capa_url: str | None = None
+) -> int:
+    return conexao.execute(
+        text(
+            "INSERT INTO edicao (obra_id, titulo, capa_url, idioma) "
+            "VALUES (:o, :t, :c, 'pt') RETURNING id"
+        ),
+        {"o": obra_id, "t": titulo, "c": capa_url},
+    ).scalar_one()
+
+
 def criar_genero(conexao: Connection, slug: str, nome: str | None = None) -> int:
     return conexao.execute(
         text("INSERT INTO genero (slug, nome) VALUES (:s, :n) RETURNING id"),

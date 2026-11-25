@@ -166,8 +166,10 @@ evento          id bigserial PK · leitor_id FK · tipo text · obra_id null
 dispensa        leitor_id FK · obra_id FK · criado_em            -- R7; PK (leitor_id, obra_id)
 quero_ler       leitor_id FK · obra_id FK · criado_em            -- R8; PK (leitor_id, obra_id)
                 posicao smallint null   -- posição em "Para você" quando foi salva (O5)
+                edicao_id FK null       -- Edição escolhida na busca (ADR 0010)
 estou_lendo     leitor_id FK · obra_id FK · criado_em            -- R13; PK (leitor_id, obra_id)
                 posicao smallint null   -- idem; vem de quero_ler quando a Obra passa de lá
+                edicao_id FK null       -- idem
 ```
 
 Decisões do modelo:
@@ -178,6 +180,7 @@ Decisões do modelo:
 - Uma Obra adicionada pelo Leitor recebe Vizinhos de conteúdo na execução de conteúdo **ativa**, com `obra_id` = a Obra nova. Ela nunca tem Vizinhos de coleitura.
 - `dispensa` e `quero_ler` entram na fase 4 (migração 0006, §8.6). Uma Obra fica em no máximo uma das duas: salvar em Quero ler desfaz a Dispensa, e dispensar tira da lista.
 - `estou_lendo` entra na fase 5 (migração 0007, §8.7). A regra passa a valer para as três: uma Obra fica em no máximo uma de `dispensa`, `quero_ler` e `estou_lendo`.
+- `quero_ler.edicao_id` e `estou_lendo.edicao_id` (migração 0010, ADR 0010) guardam a Edição de um livro buscado que foi direto para Quero ler. Ela passa de uma lista para a outra e vai para a Leitura no "Já li". `ON DELETE SET NULL`, como `leitura.edicao_id`.
 - A fase 6 (migração 0008, §8.8, ADR 0009) acrescenta `origem='open_library'`, `edicoes_ol`, `curada` e o tipo de execução `tecnico`. Uma execução `tecnico` liga cada Obra do Catálogo às Obras técnicas mais parecidas e alimenta só a aba "Tecnologia" e os "Parecidos" das Obras técnicas.
 
 ---
@@ -287,6 +290,8 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
    - Cada palavra útil da busca (sem "de", "o", "the"…) é comparada com esse texto por `word_similarity`, e a semelhança da Obra é a média entre as palavras (mínimo 0,5). "duna herbert" precisa casar com as duas palavras: *Lincoln*, de David **Herbert** Donald, fica abaixo de *Duna*. Empates vão para a mais popular.
 2. **Google Books**: `q` montado por heurística. Texto com só dígitos e hífens de 10 ou 13 dígitos vira `isbn:…`; o resto vai como texto livre. O filtro `editora:` vira `inpublisher:` (`editora:packt django` → `django inpublisher:packt`; com aspas, a editora pode ter mais de uma palavra: `editora:"alta books" python`). Com ele, o Catálogo local não busca, porque não sabe a editora das Obras; as Edições do Google cujo ISBN está no Catálogo continuam fundidas. Resultados cujo ISBN já está em `obra_isbn` são fundidos ao item do catálogo correspondente: uma Edição em português toma o lugar dele (é o título que o Leitor reconhece); em outro idioma, o item do Catálogo fica como está, sem repetir a Obra.
 
+A busca termina na Estante ou em Quero ler (decisão do Leitor, 25/11/2026). Depois da escolha e da resolução (§7.2), a confirmação oferece **"Salvar na Estante"**, com a Nota (§7.3), e **"Quero ler"**, sem Nota (§8.6). Nas páginas Adicionar e Montagem da Estante aparecem os dois; na página Quero ler, só o segundo, e sem as estrelas.
+
 A lista mostra primeiro os itens do catálogo e depois os do Google Books, com capa, título, autor e ano. Meta: **≤ 2 s no p95** para o Catálogo local; o Google Books tem até **4 s**. Em 19/11/2026, buscas de livros técnicos (`o'reilly`, `django 4 by example`, `designing data-intensive applications`) levaram de 1,8 a 2,3 s, e o limite antigo de 1,8 s descartava todas. Se o Google Books estourar o timeout, mostra só os resultados locais e um aviso discreto.
 
 ### 7.2 Resolução Edição → Obra
@@ -300,12 +305,13 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 | 3 | Título original (de `translation_of` ou `work_titles` da Edição na OL, ou o título da work) + último sobrenome do 1º autor bate com uma Obra (`rapidfuzz.token_set_ratio ≥ 90` no título e sobrenome igual depois de normalizar acentos) | Obra existente (`'titulo_original'`) |
 | 4 | Nenhuma das anteriores | Cria uma Obra `origem='leitor'` com os dados da OL (ou do Google Books, se a OL não tiver) e devolve `candidatas`: as 5 Obras do Catálogo mais próximas por trigram de título e autor |
 
-- `resolver_obra` **não grava nada**: devolve a Obra encontrada ou, no caso 4, a proposta da Obra nova e as candidatas. `registrar_resolucao` grava quando o Leitor salva a Leitura, na mesma transação. Assim, uma busca abandonada não deixa Obra órfã no Catálogo, e não é preciso fundir Obras depois.
+- `resolver_obra` **não grava nada**: devolve a Obra encontrada ou, no caso 4, a proposta da Obra nova e as candidatas. `registrar_resolucao` grava quando o Leitor salva a Leitura ou guarda a Obra em Quero ler, na mesma transação. Assim, uma busca abandonada não deixa Obra órfã no Catálogo, e não é preciso fundir Obras depois.
 - No caso 4, a UI pergunta **"É uma destas?"**. Escolher uma candidata grava a Edição e a Leitura nela; "Nenhuma" cria a Obra nova. O Leitor também pode informar o título original à mão (R1): `informar_titulo_original` reaplica a regra 3 com ele.
 - Na regra 3, o título da própria Edição também entra entre os títulos comparados (cobre as Edições no idioma original e funciona com a Open Library fora do ar). `token_set_ratio` dá 100 para "Dune" × "Dune Messiah"; o `ratio` simples desempata. O sobrenome ignora sufixos como Jr., Junior, Filho e Neto.
 - Em qualquer caso, a Edição escolhida é gravada em `edicao`, ligada à Obra, e os ISBNs dela entram em `obra_isbn` com `origem='leitor'` (a próxima busca resolve pela regra 1, e o `enriquecer-ol` não os apaga). Um ISBN da Edição que já estava lá com origem `open_library` passa a ser do Leitor e da Obra que ele confirmou. Se a Edição é em português e a Obra ainda não tem título em português (`titulo_exibicao = titulo`), o título da Edição, sem o ruído de idioma do §6.2, vira o `titulo_exibicao` (decisão do Leitor, 18/11/2026). Uma Edição em português (`idioma = 'pt'` no Google Books ou `por` na Open Library) também marca `obra.tem_edicao_pt`.
 - No banco real, *Dune* (goodbooks) ficou ligada a uma work duplicada da Open Library (`/works/OL2918756W`); a canônica é `/works/OL893414W`. Por isso a *Duna* da Aleph chega a *Dune* pela regra 3, não pela 1 nem pela 2.
 - Se a Obra já estiver na Estante, a UI avisa ("Você já tem *Duna* na Estante, com nota 5") e não cria nada (R1).
+- Se a Obra já estiver em Quero ler, a confirmação avisa ("*Duna* já está na sua lista Quero ler") e esconde o botão "Quero ler"; "Salvar na Estante" continua, para o Leitor marcar como lida. Quando a Obra só é identificada ao salvar (a candidata de "É uma destas?"), `salvar_quero_ler` levanta `JaEmQueroLer` e a transação inteira é desfeita, como com `JaNaEstante`.
 - **Cadastro manual** (R1, história 11): título + autor criam uma Obra `origem='leitor'` sem Edição, e passam pelos passos 3 e 4 com o texto digitado.
 
 ### 7.3 Adicionar uma Leitura
@@ -313,7 +319,8 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 `estante.adicionar(leitor_id, obra_id, nota, edicao_id=None, origem) -> Leitura`:
 
 - Respeita `UNIQUE (leitor_id, obra_id)` e devolve um erro de domínio `JaNaEstante` se a Obra já estiver lá.
-- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Com uma execução `tecnico` ativa, insere também os 50 Vizinhos técnicos dela, pelo mesmo KNN restrito às Obras técnicas (§8.8). Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
+- Sem `edicao_id`, a Leitura fica com a Edição que a Obra tinha em Estou lendo ou em Quero ler, se tinha (ADR 0010).
+- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura (ou de guardar em Quero ler um livro buscado, §8.6) e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Com uma execução `tecnico` ativa, insere também os 50 Vizinhos técnicos dela, pelo mesmo KNN restrito às Obras técnicas (§8.8). Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
 - A Nota pode ficar vazia (R2): a Leitura vai para a Estante, mas fica fora da pontuação.
 
 `estante.mudar_nota(...)` e `estante.remover(...)` (R2) agem direto na tabela. Como as Sugestões são calculadas na leitura (§8.5), a mudança aparece na próxima abertura de "Para você", sem nenhum recálculo.
@@ -353,7 +360,7 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `ja_li_de_sugestao` | `{posicao, nota}` | O5 |
 | `montagem_pulada` | `{}` | — (fecha a abertura automática da Montagem) |
 | `sugestao_dispensada` | `{posicao, lista}`, com `posicao` e `lista` nulas fora de "Para você" | O2 (R7) |
-| `quero_ler_salvo` | `{posicao, lista}`, idem | O2 (R8) |
+| `quero_ler_salvo` | `{posicao, lista}`, idem; nulas também vindo da busca, então o O2 não conta | O2 (R8) |
 | `leitura_iniciada` | `{posicao}`, idem; vinda de Quero ler, a posição salva lá | — (R13) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
@@ -482,10 +489,12 @@ Decisões do Leitor (19/11/2026): o filtro de idioma usa as Edições em portugu
 - A Obra dispensada continua em "Parecidos com este" e "Quem leu este também gostou". A página dela mostra "Você dispensou este livro de Para você" e o botão "Desfazer".
 - A avaliação offline (§9) não tem Dispensas. `recomendacao.pontuacao` não muda, e o teste de paridade com o SQL continua o mesmo.
 
-**R8, Quero ler.** `estante.salvar_quero_ler(leitor_id, obra_id, posicao=None)` grava em `quero_ler`, desfaz uma Dispensa da Obra e registra `quero_ler_salvo`. Uma Obra da Estante levanta `JaNaEstante`. `estante.tirar_de_quero_ler(...)` apaga a linha, e `estante.listar_quero_ler(leitor_id)` devolve a lista, da mais recente para a mais antiga.
+**R8, Quero ler.** `estante.salvar_quero_ler(leitor_id, obra_id, posicao=None, lista=None, edicao_id=None)` grava em `quero_ler`, desfaz uma Dispensa da Obra e registra `quero_ler_salvo`. Uma Obra da Estante levanta `JaNaEstante`; uma Obra que já está na lista levanta `JaEmQueroLer`, e nada é gravado, nem o evento (decisão do Leitor, 25/11/2026). `estante.quero_ler_da_obra(...)` devolve o item da lista, ou `None`. `estante.tirar_de_quero_ler(...)` apaga a linha, e `estante.listar_quero_ler(leitor_id)` devolve a lista, da mais recente para a mais antiga.
 - `estante.adicionar` tira a Obra de Quero ler na mesma transação. É o "Já li" do R8.
 - As Obras de Quero ler saem das candidatas do §8.5.
 - `quero_ler.posicao` guarda a posição em "Para você" quando a Obra foi salva de lá. O "Já li" na página Quero ler grava essas Obras com `origem='sugestao'` e registra `ja_li_de_sugestao` com essa posição (O5). As salvas da página da Obra entram com `origem='catalogo'`.
+- **Livro buscado** (25/11/2026). A busca do §7.1 também termina em Quero ler: `registrar_resolucao` e `salvar_quero_ler(..., edicao_id=)` na mesma transação, sem Nota e sem posição. Depois, `calcular_parecidos` gera o embedding e os Vizinhos da Obra do Leitor, como no §7.3, para a página dela ter os Parecidos. A posição nula deixa o `quero_ler_salvo` fora do O2, e o "Já li" dela entra com `origem='catalogo'`, fora do O5.
+- **Edição** ([ADR 0010](adr/0010-edicao-nas-listas.md)). A Edição escolhida na busca fica em `quero_ler.edicao_id`, vai para `estou_lendo` no "Comecei a ler" e para a Leitura no "Já li". A capa da lista é a dessa Edição, se houver.
 
 **R10, filtros.** `para_voce(..., generos=("fantasia", ...), so_edicao_pt=True)`.
 - **Gênero:** a Obra passa se pertence a **algum** dos Gêneros escolhidos (linha em `obra_genero`, §6.3).
@@ -502,7 +511,7 @@ Decisões do Leitor (19/11/2026): o filtro de idioma usa as Edições em portugu
 Decisões do Leitor (19/11/2026, [ADR 0008](adr/0008-estou-lendo-sem-progresso.md)): "Estou lendo" é uma lista, sem página nem percentual; tem página própria; entra por "Para você", Quero ler e a página da Obra; Obra da Estante não entra (sem releitura); a Dispensa tira da lista.
 
 **Domínio** (`recomendador/estante/listas.py`). `estante.salvar_estou_lendo(leitor_id, obra_id, posicao=None)` grava em `estou_lendo`, tira a Obra de Quero ler, desfaz a Dispensa dela e registra `leitura_iniciada`. Uma Obra da Estante levanta `JaNaEstante`. Salvar de novo não duplica e mantém a primeira posição. `estante.tirar_de_estou_lendo(...)` ("Parei de ler") apaga a linha, e `estante.listar_estou_lendo(leitor_id)` devolve a lista, da mais recente para a mais antiga.
-- **Posição (O5).** Sem `posicao`, vale a de `quero_ler`, se a Obra estava lá. Assim uma Obra salva de "Para você", que passou por Quero ler e depois por Estou lendo, ainda entra na Estante com `origem='sugestao'` e registra `ja_li_de_sugestao`.
+- **Posição (O5) e Edição.** Sem `posicao`, vale a de `quero_ler`, se a Obra estava lá; a Edição escolhida na busca vem junto (ADR 0010). Assim uma Obra salva de "Para você", que passou por Quero ler e depois por Estou lendo, ainda entra na Estante com `origem='sugestao'` e registra `ja_li_de_sugestao`.
 - **Exclusão mútua.** `estante.adicionar` ("Já li") tira a Obra de Estou lendo na mesma transação, como já faz com Quero ler. `estante.dispensar` e `estante.salvar_quero_ler` também a tiram (a segunda leva a posição de volta, se não receber outra).
 - **"Para você".** As Obras de Estou lendo saem das candidatas do §8.5, no mesmo `WHERE` final das Dispensas e de Quero ler. `recomendacao.pontuacao` não muda, e o teste de paridade com o SQL também não.
 - **Página da Obra.** `PaginaObra.estou_lendo` diz se a Obra está na lista. Nesse caso a página mostra "Você está lendo este livro." e só os botões "Já li" e "Parei de ler".
@@ -661,9 +670,9 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 |---|---|---|
 | Para você | Seletor "Para você" / "Tecnologia" (§8.8) e filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Comecei a ler", "Já li", "Não tenho interesse"). | R4, R7, R8, R10, R11, R13, R14 |
 | Estou lendo | As Obras em leitura, com "Já li" e "Parei de ler". Vazia: chamada para Quero ler. | R13 |
-| Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". Vazia: chamada para "Para você". | R8, R13 |
+| Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". A busca do §7.1, só com "Quero ler": atrás do toggle "Buscar livro" e aberta quando a lista está vazia, ao lado da chamada para "Para você". | R1, R8, R13 |
 | Estante | §7.5 | R3 |
-| Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar. Também tem o cadastro manual. | R1, R2 |
+| Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar, ou "Quero ler" sem Nota. Também tem o cadastro manual. | R1, R2, R8 |
 | Montagem da Estante | §7.4 | — |
 | Obra (oculta) | §8.3, com "Quero ler", "Comecei a ler" (§8.7) e "Desfazer" a Dispensa (§8.6) | R5, R7, R8, R13 |
 

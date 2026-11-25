@@ -1,11 +1,12 @@
 """Dispensa (R7) e Quero ler (R8), da fase 4 (SPEC §8.6), contra o banco real."""
 
 import pytest
-from fabricas import criar_obra
+from fabricas import criar_edicao, criar_obra
 from sqlalchemy import Connection, text
 
 from recomendador.config import LEITOR_ID
 from recomendador.estante import (
+    JaEmQueroLer,
     JaNaEstante,
     adicionar,
     desfazer_dispensa,
@@ -13,6 +14,7 @@ from recomendador.estante import (
     dispensar,
     listar_quero_ler,
     na_lista_quero_ler,
+    quero_ler_da_obra,
     salvar_quero_ler,
     tirar_de_quero_ler,
 )
@@ -85,10 +87,66 @@ def test_salvar_em_quero_ler_lista_da_mais_recente(conexao, duna, fundacao) -> N
     ]
 
 
-def test_salvar_de_novo_nao_duplica_nem_perde_a_posicao(conexao, duna) -> None:
+def test_salvar_de_novo_avisa_e_nao_grava_nada(conexao, duna) -> None:
+    """Obra já na lista: avisa, sem outro `quero_ler_salvo` e sem perder a posição."""
     salvar_quero_ler(conexao, LEITOR_ID, duna, posicao=2)
-    salvar_quero_ler(conexao, LEITOR_ID, duna)
+    antes = _eventos(conexao, "quero_ler_salvo")
+
+    with pytest.raises(JaEmQueroLer, match="Duna já está na sua lista Quero ler"):
+        salvar_quero_ler(conexao, LEITOR_ID, duna)
+
     assert [q.posicao for q in listar_quero_ler(conexao, LEITOR_ID)] == [2]
+    assert _eventos(conexao, "quero_ler_salvo") == antes
+
+
+def test_quero_ler_da_obra(conexao, duna, fundacao) -> None:
+    salvar_quero_ler(conexao, LEITOR_ID, duna, posicao=2)
+
+    assert quero_ler_da_obra(conexao, LEITOR_ID, duna).titulo == "Duna"
+    assert quero_ler_da_obra(conexao, LEITOR_ID, fundacao) is None
+
+
+def test_livro_buscado_entra_sem_posicao_e_fica_fora_do_o2(conexao, duna) -> None:
+    """Vindo da busca, o `quero_ler_salvo` não tem posição: a consulta do O2 só conta
+    eventos com `posicao <= 10` (`reports/consultas-metricas.sql`)."""
+    salvar_quero_ler(conexao, LEITOR_ID, duna)
+
+    assert _eventos(conexao, "quero_ler_salvo") == [(duna, {"posicao": None, "lista": None})]
+    no_o2 = conexao.execute(
+        text(
+            "SELECT count(*) FROM evento WHERE tipo = 'quero_ler_salvo' "
+            "AND (dados->>'posicao')::int <= 10"
+        )
+    ).scalar_one()
+    assert no_o2 == 0
+
+
+def test_a_edicao_da_busca_fica_na_lista_e_mostra_a_capa(conexao, duna) -> None:
+    edicao = criar_edicao(conexao, duna, "Duna", capa_url="https://capa/duna-aleph.jpg")
+
+    salvar_quero_ler(conexao, LEITOR_ID, duna, edicao_id=edicao)
+
+    [item] = listar_quero_ler(conexao, LEITOR_ID)
+    assert item.capa_url == "https://capa/duna-aleph.jpg"
+
+
+def test_ja_li_leva_a_edicao_de_quero_ler_para_a_leitura(conexao, duna) -> None:
+    edicao = criar_edicao(conexao, duna, "Duna")
+    salvar_quero_ler(conexao, LEITOR_ID, duna, edicao_id=edicao)
+
+    leitura = adicionar(conexao, LEITOR_ID, duna, 5, origem="catalogo")
+
+    assert leitura.edicao_id == edicao
+
+
+def test_a_edicao_do_ja_li_vale_mais_que_a_da_lista(conexao, duna) -> None:
+    da_lista = criar_edicao(conexao, duna, "Duna")
+    outra = criar_edicao(conexao, duna, "Dune")
+    salvar_quero_ler(conexao, LEITOR_ID, duna, edicao_id=da_lista)
+
+    leitura = adicionar(conexao, LEITOR_ID, duna, 5, origem="busca", edicao_id=outra)
+
+    assert leitura.edicao_id == outra
 
 
 def test_salvar_em_quero_ler_desfaz_a_dispensa(conexao, duna) -> None:

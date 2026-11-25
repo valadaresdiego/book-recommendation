@@ -394,3 +394,136 @@ def test_aba_tecnologia_mostra_as_sugestoes_tecnicas(conexao: Connection) -> Non
         text("SELECT dados FROM evento WHERE tipo = 'sugestao_dispensada'")
     ).scalar_one()
     assert dispensa == {"posicao": 2, "lista": "tecnologia"}
+
+
+# --- Busca → Quero ler (R8, SPEC §7.1 e §8.6) ---
+
+
+def _duna_da_busca() -> catalogo.ResultadoBusca:
+    return catalogo.ResultadoBusca(
+        titulo="Duna",
+        autores=("Frank Herbert",),
+        ano=2017,
+        capa_url="https://capa/duna-aleph.jpg",
+        google_volume_id="vol-duna",
+        isbns=("9788576573135",),
+        editora="Aleph",
+        idioma="pt",
+    )
+
+
+def test_busca_guarda_obra_do_catalogo_em_quero_ler(conexao: Connection) -> None:
+    obra = criar_obra(conexao, "Dune", ("Frank Herbert",))
+    at = _pagina("adicionar")
+    at.session_state["adicionar-resolucao"] = catalogo.Resolucao(
+        "isbn", _duna_da_busca(), obra_id=obra
+    )
+    at.run()
+    assert "Salvar na Estante" in [b.label for b in at.button]
+
+    at.button(key="adicionar-quero").click().run()
+
+    assert not at.exception
+    assert at.success[0].value == "Duna entrou na sua lista Quero ler."
+    assert estante.leitura_da_obra(conexao, LEITOR_ID, obra) is None
+    [item] = estante.listar_quero_ler(conexao, LEITOR_ID)
+    assert (item.obra_id, item.capa_url, item.posicao) == (
+        obra,
+        "https://capa/duna-aleph.jpg",
+        None,
+    )
+    dados = conexao.execute(
+        text("SELECT dados FROM evento WHERE tipo = 'quero_ler_salvo'")
+    ).scalar_one()
+    assert dados == {"posicao": None, "lista": None}  # fora do O2
+
+
+def test_busca_guarda_obra_nova_em_quero_ler_e_o_ja_li_leva_a_edicao(
+    conexao: Connection,
+) -> None:
+    nova = catalogo.ObraProposta(
+        titulo="Duna",
+        titulo_original=None,
+        titulo_exibicao="Duna",
+        autores=("Frank Herbert",),
+        ano_original=1965,
+        descricao=None,
+        capa_url=None,
+        ol_work_key=None,
+    )
+    at = _pagina("quero_ler")
+    at.session_state["quero_ler-resolucao"] = catalogo.Resolucao(
+        "nova", _duna_da_busca(), obra_nova=nova
+    )
+    at.run()
+    assert "Salvar na Estante" not in [b.label for b in at.button]
+    assert not at.get("feedback")  # sem estrelas: a Nota fica para o "Já li"
+
+    at.button(key="quero_ler-quero").click().run()
+
+    assert not at.exception
+    # A lista deixou de estar vazia: a busca fica aberta para mostrar a mensagem.
+    assert at.success[0].value == "Duna entrou na sua lista Quero ler."
+    [item] = estante.listar_quero_ler(conexao, LEITOR_ID)
+    assert item.titulo == "Duna"
+    origem = conexao.execute(
+        text("SELECT origem FROM obra WHERE id = :o"), {"o": item.obra_id}
+    ).scalar_one()
+    assert origem == "leitor"
+
+    lista = _pagina("quero_ler").run()
+    lista.button(key=f"ql-{item.obra_id}-salvar").click().run()
+
+    leitura = estante.leitura_da_obra(conexao, LEITOR_ID, item.obra_id)
+    assert leitura.origem == "catalogo"
+    edicao = conexao.execute(
+        text("SELECT edicao_id FROM leitura WHERE obra_id = :o"), {"o": item.obra_id}
+    ).scalar_one()
+    assert edicao is not None
+
+
+def test_busca_em_quero_ler_avisa_obra_ja_na_estante(conexao: Connection) -> None:
+    obra = criar_obra(conexao, "Dune", ("Frank Herbert",), titulo_exibicao="Duna")
+    estante.adicionar(conexao, LEITOR_ID, obra, 5, origem="busca")
+    at = _pagina("quero_ler")
+    at.session_state["quero_ler-resolucao"] = catalogo.Resolucao("catalogo", None, obra_id=obra)
+    at.run()
+
+    assert not at.exception
+    assert at.warning[0].value == "Você já tem Duna na Estante, com nota 5"
+    assert "Quero ler" not in [b.label for b in at.button]
+    assert estante.listar_quero_ler(conexao, LEITOR_ID) == []
+
+
+def test_busca_avisa_obra_ja_em_quero_ler(conexao: Connection) -> None:
+    obra = criar_obra(conexao, "Dune", ("Frank Herbert",), titulo_exibicao="Duna")
+    estante.salvar_quero_ler(conexao, LEITOR_ID, obra)
+    at = _pagina("adicionar")
+    at.session_state["adicionar-resolucao"] = catalogo.Resolucao("catalogo", None, obra_id=obra)
+    at.run()
+
+    assert not at.exception
+    assert at.info[0].value == "Duna já está na sua lista Quero ler."
+    rotulos = [b.label for b in at.button]
+    assert "Salvar na Estante" in rotulos  # dá para marcar como lida
+    assert "Quero ler" not in rotulos
+
+
+def test_quero_ler_vazia_abre_a_busca() -> None:
+    at = _pagina("quero_ler").run()
+
+    assert not at.exception
+    assert at.text_input[0].label == "Título, autor ou ISBN"
+    assert not at.toggle
+
+
+def test_quero_ler_com_itens_esconde_a_busca(conexao: Connection) -> None:
+    obra = criar_obra(conexao, "Dune", ("Frank Herbert",), titulo_exibicao="Duna")
+    estante.salvar_quero_ler(conexao, LEITOR_ID, obra)
+    at = _pagina("quero_ler").run()
+
+    assert not at.text_input
+    at.toggle(key="ql-buscar").set_value(True).run()
+
+    assert not at.exception
+    assert at.text_input[0].label == "Título, autor ou ISBN"

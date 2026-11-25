@@ -1,10 +1,16 @@
-"""Quero ler (R8, SPEC §8.6 e §11): as Obras guardadas para ler depois, fora da Estante."""
+"""Quero ler (R8, SPEC §8.6 e §11): as Obras guardadas para ler depois, fora da Estante.
+
+A busca entra aqui também, só com o botão "Quero ler": aberta com a lista vazia, atrás de um
+toggle quando não está.
+"""
 
 import streamlit as st
 from componentes import (
     LEITOR,
     abrir_obra,
     autores_em_texto,
+    busca_e_adicionar,
+    busca_tem_aviso,
     comecei_a_ler,
     ja_li,
     mostrar_capa,
@@ -24,11 +30,20 @@ st.title("Quero ler")
 itens = _lista()
 
 if not itens:
-    st.info("Sua lista Quero ler está vazia. Guarde aqui as sugestões que quer ler depois.")
+    st.info(
+        "Sua lista Quero ler está vazia. Busque um livro que quer ler ou guarde as sugestões "
+        "de Para você."
+    )
     st.page_link("paginas/para_voce.py", label="Ver Para você", icon="✨")
+    busca_e_adicionar("quero_ler", destino="quero_ler")
     st.stop()
 
 st.caption("1 livro na lista." if len(itens) == 1 else f"{len(itens)} livros na lista.")
+if busca_tem_aviso("quero_ler"):
+    st.session_state["ql-buscar"] = True  # a mensagem de "entrou na lista" aparece na busca
+if st.toggle("Buscar livro", key="ql-buscar"):
+    with st.container(border=True):
+        busca_e_adicionar("quero_ler", destino="quero_ler")
 
 posicoes = st.session_state.setdefault("posicao-da-sugestao", {})
 for item in itens:

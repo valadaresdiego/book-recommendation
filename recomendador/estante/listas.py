@@ -4,6 +4,9 @@
 Uma Obra fica em no máximo uma das três: entrar numa lista tira das outras duas e desfaz a
 Dispensa, e dispensar tira das listas. A consulta de "Para você" exclui as três das
 candidatas.
+
+A posição em "Para você" (O5) e a Edição escolhida na busca (ADR 0010) passam de uma
+lista para a outra, e o "Já li" leva a Edição para a Leitura (`adicionar`).
 """
 
 import uuid
@@ -21,7 +24,7 @@ class ItemDeLista:
     obra_id: int
     titulo: str  # `titulo_exibicao`
     autores: tuple[str, ...]
-    capa_url: str | None
+    capa_url: str | None  # a da Edição escolhida na busca, ou a da Obra
     posicao: int | None  # posição em "Para você" quando foi salva; nula fora de lá
     criado_em: datetime  # quando entrou na lista
 
@@ -34,6 +37,14 @@ class ItemQueroLer(ItemDeLista):
 @dataclass(frozen=True)
 class ItemEstouLendo(ItemDeLista):
     """Uma Obra da lista Estou lendo (R13); `criado_em` é quando o Leitor começou."""
+
+
+class JaEmQueroLer(Exception):
+    """A Obra já está na lista Quero ler: o R8 avisa e não grava outro evento."""
+
+    def __init__(self, item: ItemQueroLer) -> None:
+        self.item = item
+        super().__init__(f"{item.titulo} já está na sua lista Quero ler")
 
 
 def _apagar(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int) -> None:
@@ -50,28 +61,41 @@ def _existe(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int) -
     ).scalar_one()
 
 
-def _posicao(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int) -> int | None:
-    return conn.execute(
-        text(f"SELECT posicao FROM {tabela} WHERE leitor_id = :l AND obra_id = :o"),
+def _herdado(
+    conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int
+) -> tuple[int | None, int | None]:
+    """A posição e a Edição que a Obra tinha na outra lista, se estava lá."""
+    linha = conn.execute(
+        text(f"SELECT posicao, edicao_id FROM {tabela} WHERE leitor_id = :l AND obra_id = :o"),
         {"l": leitor_id, "o": obra_id},
-    ).scalar_one_or_none()
+    ).one_or_none()
+    return (linha.posicao, linha.edicao_id) if linha else (None, None)
+
+
+def _consultar(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int | None):
+    return conn.execute(
+        text(
+            f"""
+            SELECT q.obra_id, o.titulo_exibicao AS titulo, o.autores,
+                   coalesce(e.capa_url, o.capa_url) AS capa_url, q.posicao, q.criado_em
+            FROM {tabela} q
+            JOIN obra o ON o.id = q.obra_id
+            LEFT JOIN edicao e ON e.id = q.edicao_id
+            WHERE q.leitor_id = :l AND (CAST(:o AS bigint) IS NULL OR q.obra_id = :o)
+            ORDER BY q.criado_em DESC, q.obra_id DESC
+            """
+        ),
+        {"l": leitor_id, "o": obra_id},
+    )
+
+
+def _item(linha, classe: type):
+    return classe(**{**linha._mapping, "autores": tuple(linha.autores or ())})
 
 
 def _listar(conn: Connection, tabela: str, leitor_id: uuid.UUID, classe: type) -> list:
     """Uma lista, da Obra que entrou mais recentemente para a mais antiga."""
-    linhas = conn.execute(
-        text(
-            f"""
-            SELECT q.obra_id, o.titulo_exibicao AS titulo, o.autores, o.capa_url,
-                   q.posicao, q.criado_em
-            FROM {tabela} q JOIN obra o ON o.id = q.obra_id
-            WHERE q.leitor_id = :l
-            ORDER BY q.criado_em DESC, q.obra_id DESC
-            """
-        ),
-        {"l": leitor_id},
-    )
-    return [classe(**{**r._mapping, "autores": tuple(r.autores or ())}) for r in linhas]
+    return [_item(r, classe) for r in _consultar(conn, tabela, leitor_id, None)]
 
 
 # --- Dispensa (R7) ---
@@ -115,23 +139,30 @@ def salvar_quero_ler(
     obra_id: int,
     posicao: int | None = None,
     lista: str | None = None,
+    edicao_id: int | None = None,
 ) -> None:
     """Põe a Obra na lista Quero ler, tira de Estou lendo e desfaz uma Dispensa dela.
 
-    `posicao` é a posição em "Para você" (O2 e O5); salvar de novo mantém a primeira. Sem
-    ela, vale a que a Obra tinha em Estou lendo. `lista` é a lista de "Para você" de onde a
-    Obra veio (O2, §8.8). Levanta `JaNaEstante` se a Obra já for uma Leitura.
+    `posicao` é a posição em "Para você" (O2 e O5), nula quando a Obra vem da página dela
+    ou da busca; `lista` é a lista de "Para você" de onde ela veio (O2, §8.8). `edicao_id`
+    é a Edição escolhida na busca (ADR 0010). Sem posição ou sem Edição, valem as que a Obra
+    tinha em Estou lendo.
+
+    Levanta `JaNaEstante` se a Obra já for uma Leitura e `JaEmQueroLer` se já estiver na
+    lista; nos dois casos nada é gravado.
     """
     if existente := leitura_da_obra(conn, leitor_id, obra_id):
         raise JaNaEstante(existente)
-    if posicao is None:
-        posicao = _posicao(conn, "estou_lendo", leitor_id, obra_id)
+    if na_lista := quero_ler_da_obra(conn, leitor_id, obra_id):
+        raise JaEmQueroLer(na_lista)
+    posicao_antes, edicao_antes = _herdado(conn, "estou_lendo", leitor_id, obra_id)
+    posicao = posicao if posicao is not None else posicao_antes
+    edicao_id = edicao_id if edicao_id is not None else edicao_antes
     conn.execute(
         text(
-            "INSERT INTO quero_ler (leitor_id, obra_id, posicao) VALUES (:l, :o, :p) "
-            "ON CONFLICT DO NOTHING"
+            "INSERT INTO quero_ler (leitor_id, obra_id, posicao, edicao_id) VALUES (:l, :o, :p, :e)"
         ),
-        {"l": leitor_id, "o": obra_id, "p": posicao},
+        {"l": leitor_id, "o": obra_id, "p": posicao, "e": edicao_id},
     )
     _apagar(conn, "dispensa", leitor_id, obra_id)
     _apagar(conn, "estou_lendo", leitor_id, obra_id)
@@ -145,6 +176,11 @@ def tirar_de_quero_ler(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> 
 
 def na_lista_quero_ler(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> bool:
     return _existe(conn, "quero_ler", leitor_id, obra_id)
+
+
+def quero_ler_da_obra(conn: Connection, leitor_id: uuid.UUID, obra_id: int) -> ItemQueroLer | None:
+    linha = _consultar(conn, "quero_ler", leitor_id, obra_id).one_or_none()
+    return _item(linha, ItemQueroLer) if linha else None
 
 
 def listar_quero_ler(conn: Connection, leitor_id: uuid.UUID) -> list[ItemQueroLer]:
@@ -161,19 +197,20 @@ def salvar_estou_lendo(
     """ "Comecei a ler": põe a Obra em Estou lendo, tira de Quero ler e desfaz a Dispensa.
 
     `posicao` é a posição em "Para você". Sem ela, vale a que a Obra tinha em Quero ler,
-    para o "Já li" ainda contar no O5. Salvar de novo mantém a primeira. Levanta
-    `JaNaEstante` se a Obra já for uma Leitura (sem releitura na v1, ADR 0008).
+    para o "Já li" ainda contar no O5; a Edição escolhida na busca vem de lá também (ADR
+    0010). Salvar de novo mantém a primeira. Levanta `JaNaEstante` se a Obra já for uma
+    Leitura (sem releitura na v1, ADR 0008).
     """
     if existente := leitura_da_obra(conn, leitor_id, obra_id):
         raise JaNaEstante(existente)
-    if posicao is None:
-        posicao = _posicao(conn, "quero_ler", leitor_id, obra_id)
+    posicao_antes, edicao_id = _herdado(conn, "quero_ler", leitor_id, obra_id)
+    posicao = posicao if posicao is not None else posicao_antes
     conn.execute(
         text(
-            "INSERT INTO estou_lendo (leitor_id, obra_id, posicao) VALUES (:l, :o, :p) "
-            "ON CONFLICT DO NOTHING"
+            "INSERT INTO estou_lendo (leitor_id, obra_id, posicao, edicao_id) "
+            "VALUES (:l, :o, :p, :e) ON CONFLICT DO NOTHING"
         ),
-        {"l": leitor_id, "o": obra_id, "p": posicao},
+        {"l": leitor_id, "o": obra_id, "p": posicao, "e": edicao_id},
     )
     _apagar(conn, "quero_ler", leitor_id, obra_id)
     _apagar(conn, "dispensa", leitor_id, obra_id)

@@ -104,7 +104,8 @@ def adicionar(
 
     `duracao_s` é o tempo desde a última busca da sessão, para o O3 (evento `leitura_salva`).
     Levanta `JaNaEstante` se a Obra já estiver lá, mesmo por outra Edição. A Obra sai das
-    listas Quero ler (R8, SPEC §8.6) e Estou lendo (R13, §8.7).
+    listas Quero ler (R8, SPEC §8.6) e Estou lendo (R13, §8.7); sem `edicao_id`, a Leitura
+    fica com a Edição escolhida na busca que estava numa delas (ADR 0010).
 
     O embedding de uma Obra `origem='leitor'` (SPEC §7.3) é calculado depois, numa
     transação à parte (`recomendacao.calcular_vizinhos_da_obra`), para uma falha nele não
@@ -117,7 +118,12 @@ def adicionar(
         text(
             """
             INSERT INTO leitura (leitor_id, obra_id, edicao_id, nota, origem)
-            VALUES (:leitor, :obra, :edicao, :nota, :origem)
+            VALUES (:leitor, :obra, coalesce(CAST(:edicao AS bigint), (
+                SELECT edicao_id FROM estou_lendo WHERE leitor_id = :leitor AND obra_id = :obra
+                UNION ALL
+                SELECT edicao_id FROM quero_ler WHERE leitor_id = :leitor AND obra_id = :obra
+                LIMIT 1
+            )), :nota, :origem)
             RETURNING id, obra_id, nota, origem, edicao_id
             """
         ),
