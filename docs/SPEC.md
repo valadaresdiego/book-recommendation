@@ -379,7 +379,7 @@ sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
 - Por Obra, guarda os **K = 20** maiores `sim > 0`.
 - K e λ foram calibrados no §9.4 (ADR 0007). O ponto de partida era K = 50 e λ = 50, e a diferença no NDCG@20 ficou abaixo de 3 %.
 - `parametros.escala` guarda a média das similaridades dos Vizinhos gravados, que a mistura do §8.5 usa.
-- ALS (`implicit`, GPU) é o candidato alternativo. A similaridade vem do cosseno entre vetores de item, e a saída tem o mesmo formato (`vizinho`). Ele só entra se ganhar na avaliação (§9).
+- ALS (`implicit`) era o candidato alternativo, com a similaridade do cosseno entre vetores de item e a saída no mesmo formato (`vizinho`). Testado em 25/11/2026, perdeu em todas as configurações: 0,2603 contra 0,2967 de NDCG@20 na mistura (ADR 0007). A Coleitura item-item fica.
 
 ### 8.2 Similaridade de conteúdo (embeddings)
 
@@ -617,7 +617,7 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 ### 9.4 Calibração e critério de entrada
 
 - Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, β ∈ {0; 0,25; 0,5; 1} (cada execução isolada grava a de β em `metricas.varredura_beta`), K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e a simétrica, 5 → 1 · 4 → 0,5 · 3 → 0 · 2 → −0,5 · 1 → −1). O resultado vai para `reports/avaliacao-*.md` e a grade completa para `reports/varredura-*.csv`.
-- K e λ variam só a coleitura, que a avaliação recalcula sobre o treino a cada configuração. O conteúdo usa os Vizinhos gravados da execução (K = 50); com α = 1, K e λ não se aplicam.
+- K e λ variam só a coleitura, que a avaliação recalcula sobre o treino a cada configuração. O conteúdo usa os Vizinhos gravados da execução (K = 50); com α = 1, K e λ não se aplicam. O K = 100 no conteúdo, testado à parte em 25/11/2026, piorou a mistura (0,2967 → 0,2927, ADR 0007).
 - A combinação (α de `config`) fica em `metricas.combinada` das duas execuções, com a melhor configuração da varredura em `combinada.melhor`.
 - **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual.
 - **Resultado (19/11/2026, ADR 0007):** escalas igualadas, α = 0,25, β = 0, K = 20, λ = 10 e a tabela de pesos do PRD. NDCG@20 combinado 0,3176, contra 0,3117 da Coleitura sozinha, 0,0650 do conteúdo sozinho e 0,0828 da popularidade. Depois, o Leitor voltou o β para 0,25 (NDCG@20 0,2965, cobertura 40 %), para proteger as Estantes com muitas Obras fora da Base.
