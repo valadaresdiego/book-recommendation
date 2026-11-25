@@ -1,0 +1,17 @@
+# Works técnicas que nunca se juntam a outra pelo título (SPEC §8.8, passo 5). Revisada pelo
+# Leitor.
+#
+# A regra junta as works de mesmo título principal e mesmo autor quando um dos subtítulos
+# está vazio, porque a Open Library muitas vezes não tem o subtítulo. Aqui ficam os livros
+# diferentes que ela juntaria. Uma work da lista não absorve nem é absorvida; ela só vira
+# Obra se passar no corte, como as outras.
+# - work, titulo e autor: como na lista curada. A carga falha se a work não estiver no dump
+#   ou se o título dela não começar por este título.
+#
+# Medido em 25/11/2026: das 35 junções com um subtítulo vazio, só esta estava errada.
+
+# Brad Green e Shyam Seshadri, 2013. Não é a work sem subtítulo de AngularJS: Up and
+# Running (/works/OL19547475W), dos mesmos autores, de 2015.
+- work: /works/OL19548384W
+  titulo: AngularJS
+  autor: Brad Green
