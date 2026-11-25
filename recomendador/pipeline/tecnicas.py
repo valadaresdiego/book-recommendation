@@ -11,6 +11,10 @@ Três passadas em streaming, como no `enriquecer-ol` (§6.2):
 Entram as works com ≥ 10 Edições, as de editora técnica (`catalogo/editoras_tecnicas.txt`)
 com Edição desde 2012 e ≥ 2 Edições ou Edição desde 2018, e as da lista curada. As outras
 Obras técnicas do Catálogo (Base e Leitor) continuam como estão.
+
+A Open Library tem uma work por edição de muitos livros técnicos. Viram uma Obra só as
+works do `fundir` da lista curada e as escolhidas de mesmo título, sem a marca de edição, e
+com um autor em comum (`fundir_pelo_titulo`).
 """
 
 import logging
@@ -25,7 +29,12 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.fontes.open_library import URL_CAPA, ano_de, texto_descricao
 from recomendador.catalogo.fontes.open_library import assuntos as assuntos_ol
 from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA
-from recomendador.catalogo.texto import normalizar, sem_autores_repetidos
+from recomendador.catalogo.texto import (
+    chave_do_autor,
+    normalizar,
+    sem_autores_repetidos,
+    titulo_sem_ruido,
+)
 from recomendador.pipeline.enriquecimento_ol import (
     RE_WORK,
     em_portugues,
@@ -56,6 +65,17 @@ _RE_RADICAIS = re.compile(
     re.IGNORECASE,
 )
 _RE_ANO = re.compile(r"\b(1[89]\d\d|20\d\d)\b")
+
+# A marca de edição no título: "Second Edition", "3rd edition", "Revised and Updated Edition".
+_PALAVRA_DE_EDICAO = (
+    r"(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth"
+    r"|tenth|eleventh|twelfth|revised|updated|expanded|international|global|anniversary"
+    r"|new|special|and|\d{4})"
+)
+_RE_EDICAO = re.compile(rf"(?:\b{_PALAVRA_DE_EDICAO}[\s,]+)*\bedition\b", re.IGNORECASE)
+_RE_VOLUME = re.compile(
+    r"\b(?:vol|volume|part|parts|book|fascicle|tome)\b\.?\s*[0-9ivx]+\b", re.IGNORECASE
+)
 
 
 class CuradaInvalida(ValueError):
@@ -290,6 +310,90 @@ def _conferir_curada(c: Curada, da_lista: dict[str, WorkLida]) -> None:
         )
 
 
+# --- Works duplicadas ---
+
+
+def chave_do_titulo(titulo: str) -> tuple[str, str | None]:
+    """(título principal, subtítulo), normalizados e sem a marca de edição.
+
+    Num volume ou parte de série, devolve o título inteiro e None: ele só se junta a outra
+    work do mesmo volume.
+    """
+    # "C", "C++" e "C#" são linguagens diferentes, e o `normalizar` tira a pontuação.
+    sem_edicao = _RE_EDICAO.sub(" ", titulo).replace("++", " plusplus ").replace("#", " sharp ")
+    if _RE_VOLUME.search(sem_edicao):
+        return normalizar(sem_edicao), None
+    principal, _, subtitulo = sem_edicao.partition(":")
+    return normalizar(principal), normalizar(subtitulo)
+
+
+def _subtitulos_compativeis(a: str | None, b: str | None) -> bool:
+    """Iguais, ou um deles vazio: a Open Library muitas vezes não tem o subtítulo."""
+    if a is None or b is None:
+        return a == b
+    return a == b or not a or not b
+
+
+def fundir_pelo_titulo(
+    works: list[tuple[WorkLida, bool, int]], nomes: dict[str, str]
+) -> dict[str, str]:
+    """Das works (work, curada, nº de Edições), as que são outra edição de uma das outras:
+    {work absorvida: work que fica}.
+
+    Duas works são da mesma Obra se têm o mesmo título principal, subtítulos compatíveis e
+    um autor em comum, pela chave na Open Library ou pelo nome (`chave_do_autor`), porque
+    ela tem vários registros para o mesmo autor. Fica a work curada e, depois, a de mais
+    Edições. Uma work curada nunca é absorvida: a lista é revisada pelo Leitor.
+    """
+    grupos: dict[str, list[tuple[WorkLida, bool, str | None]]] = {}
+    for w, curada, _ in sorted(works, key=lambda x: (not x[1], -x[2], x[0].chave)):
+        principal, subtitulo = chave_do_titulo(w.titulo)
+        grupos.setdefault(principal, []).append((w, curada, subtitulo))
+    absorvidas: dict[str, str] = {}
+    for itens in grupos.values():
+        ficam: list[tuple[str, set, list[str | None]]] = []  # (work, autores, [subtítulo])
+        for w, curada, subtitulo in itens:
+            autores = set(w.autores) | {chave_do_autor(nomes[a]) for a in w.autores if a in nomes}
+            autores.discard(None)
+            alvo = None
+            if not curada:
+                alvo = next(
+                    (
+                        f
+                        for f in ficam
+                        if f[1] & autores and _subtitulos_compativeis(f[2][0], subtitulo)
+                    ),
+                    None,
+                )
+            if alvo is None:
+                ficam.append((w.chave, autores, [subtitulo]))
+                continue
+            absorvidas[w.chave] = alvo[0]
+            alvo[1].update(autores)
+            if alvo[2][0] == "":
+                # A work sem subtítulo fica com o da absorvida: uma terceira, com outro
+                # subtítulo, é outro livro.
+                alvo[2][0] = subtitulo
+    return absorvidas
+
+
+def _juntar(todas: list[EdicoesDaWork | None]) -> EdicoesDaWork:
+    """As Edições de várias works da mesma Obra."""
+    e = EdicoesDaWork()
+    for x in todas:
+        if x is None:
+            continue
+        e.quantas += x.quantas
+        e.ano_min = min((a for a in (e.ano_min, x.ano_min) if a is not None), default=None)
+        e.ano_max = max((a for a in (e.ano_max, x.ano_max) if a is not None), default=None)
+        e.editoras |= x.editoras
+        e.isbns |= x.isbns
+        e.em_portugues |= x.em_portugues
+        if x.titulo_pt and (e.titulo_pt is None or x.titulo_pt > e.titulo_pt):
+            e.titulo_pt = x.titulo_pt
+    return e
+
+
 # --- Gravação ---
 
 
@@ -305,7 +409,7 @@ class ObraTecnica:
     edicoes: int
     curada: bool
     em_portugues: bool
-    isbns: list[str]  # os da work e os das duplicadas da lista curada
+    isbns: list[str]  # os da work e os das works fundidas nela
     assuntos: list[str]
 
 
@@ -317,16 +421,15 @@ class ResumoTecnicas:
     novas: int
     apagadas: int
     mantidas_em_uso: int  # saíram do corte, mas têm Leitura, lista, Edição ou evento
-    fundidas: int  # works duplicadas da lista curada, cujos ISBNs foram para a Obra principal
+    fundidas: int  # works duplicadas (lista curada e mesmo título), juntadas a outra Obra
     do_leitor: int  # Obras do Leitor que viraram técnicas pela work
     com_descricao: int
     com_edicao_pt: int
 
 
 def _obra_tecnica(
-    w: WorkLida, e: EdicoesDaWork | None, nomes: dict[str, str], curada: bool, extras: set[str]
+    w: WorkLida, e: EdicoesDaWork, nomes: dict[str, str], curada: bool
 ) -> ObraTecnica:
-    e = e or EdicoesDaWork()
     return ObraTecnica(
         work=w.chave,
         titulo=w.titulo,
@@ -338,7 +441,7 @@ def _obra_tecnica(
         edicoes=e.quantas,
         curada=curada,
         em_portugues=e.em_portugues,
-        isbns=sorted(e.isbns) + sorted(extras - e.isbns),
+        isbns=sorted(e.isbns),
         assuntos=w.assuntos,
     )
 
@@ -456,7 +559,22 @@ def _gravar(
             "WHERE o.id = g.obra_id AND o.origem = 'open_library'"
         )
     )
-    tecnicas = sorted({*id_por_work.values(), *do_leitor})
+    # Tecnologia: as Obras desta carga e as mantidas que o Leitor tem (Leitura, Quero ler,
+    # Estou lendo). Uma presa só por evento, Dispensa ou Edição, como a de uma work
+    # absorvida, deixa de ser candidata na aba (§8.8, passo 8).
+    do_leitor_fora = conn.execute(
+        text(
+            """
+            SELECT o.id FROM obra o
+            WHERE o.origem = 'open_library' AND NOT (o.ol_work_key = ANY(:w)) AND (
+                EXISTS (SELECT 1 FROM leitura x WHERE x.obra_id = o.id)
+                OR EXISTS (SELECT 1 FROM quero_ler x WHERE x.obra_id = o.id)
+                OR EXISTS (SELECT 1 FROM estou_lendo x WHERE x.obra_id = o.id))
+            """
+        ),
+        {"w": selecionadas},
+    ).scalars()
+    tecnicas = sorted({*(id_por_work[w] for w in selecionadas), *do_leitor_fora, *do_leitor})
     if tecnicas:
         conn.execute(
             text(
@@ -466,13 +584,31 @@ def _gravar(
             ),
             {"g": genero_id, "obras": tecnicas},
         )
-    # Uma Edição em português gravada pelo Leitor continua valendo (§7.2).
+    # Uma Edição em português gravada pelo Leitor continua valendo (§7.2): o idioma e, se o
+    # dump não deu título em português, o título dela (*Mãos à Obra*).
     conn.execute(
         text(
             "UPDATE obra o SET tem_edicao_pt = true WHERE o.origem = 'open_library' "
             "AND EXISTS (SELECT 1 FROM edicao e WHERE e.obra_id = o.id AND e.idioma = 'pt')"
         )
     )
+    titulos_do_leitor = [
+        {"o": obra, "t": titulo}
+        for obra, bruto in conn.execute(
+            text(
+                """
+                SELECT DISTINCT ON (o.id) o.id, e.titulo
+                FROM obra o JOIN edicao e ON e.obra_id = o.id
+                WHERE o.origem = 'open_library' AND o.titulo_exibicao = o.titulo
+                  AND e.idioma = 'pt' AND e.titulo IS NOT NULL
+                ORDER BY o.id, e.id DESC
+                """
+            )
+        )
+        if (titulo := titulo_sem_ruido(bruto))
+    ]
+    if titulos_do_leitor:
+        conn.execute(text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"), titulos_do_leitor)
     return len(set(selecionadas) - antes), len(apagadas), mantidas
 
 
@@ -507,7 +643,7 @@ def carregar_tecnicas(
     log.info("Passada 2/3 (%s): Edições", editions_dump.name)
     edicoes = _ler_edicoes(editions_dump, set(tecnicas) | principais | duplicadas)
 
-    # Uma work que já é de uma Obra da Base ou do Leitor não vira Obra nova (§8.8, passo 6).
+    # Uma work que já é de uma Obra da Base ou do Leitor não vira Obra nova (§8.8, passo 7).
     ocupadas = {
         r.ol_work_key: (r.id, r.origem, r.biografia)
         for r in conn.execute(
@@ -523,7 +659,8 @@ def carregar_tecnicas(
             {"b": SLUG_BIOGRAFIAS},
         )
     }
-    escolhidas: dict[str, tuple[WorkLida, bool, set[str]]] = {}
+    # work -> (work lida, curada, works fundidas nela)
+    escolhidas: dict[str, tuple[WorkLida, bool, list[str]]] = {}
     por_ramo = {"edicoes": 0, "editora": 0, "curada": 0}
     do_leitor: list[int] = []
     da_base = 0
@@ -547,11 +684,10 @@ def carregar_tecnicas(
             continue
         if ramo := ramo_do_corte(edicoes.get(chave), re_editoras):
             por_ramo[ramo] += 1
-            escolhidas[chave] = (w, False, set())
+            escolhidas[chave] = (w, False, [])
     for c in curadas:
         if not ocupada(c.work):
-            extras = {i for f in c.fundir for i in edicoes.get(f, EdicoesDaWork()).isbns}
-            escolhidas[c.work] = (da_lista[c.work], True, extras)
+            escolhidas[c.work] = (da_lista[c.work], True, list(c.fundir))
             por_ramo["curada"] += 1
             fundidas += len(c.fundir)
     if da_base:
@@ -559,9 +695,18 @@ def carregar_tecnicas(
 
     log.info("Passada 3/3 (%s): autores", authors_dump.name)
     nomes = _ler_autores(authors_dump, {a for w, _, _ in escolhidas.values() for a in w.autores})
+    absorvidas = fundir_pelo_titulo(
+        [(w, c, edicoes.get(k, EdicoesDaWork()).quantas) for k, (w, c, _) in escolhidas.items()],
+        nomes,
+    )
+    for chave, fica in absorvidas.items():
+        escolhidas[fica][2].append(chave)
+        del escolhidas[chave]
+    log.info("  %d works de mesmo título e autor juntadas a outra", len(absorvidas))
+    fundidas += len(absorvidas)
     obras = [
-        _obra_tecnica(w, edicoes.get(k), nomes, curada, extras)
-        for k, (w, curada, extras) in escolhidas.items()
+        _obra_tecnica(w, _juntar([edicoes.get(f) for f in (k, *fundir)]), nomes, curada)
+        for k, (w, curada, fundir) in escolhidas.items()
     ]
     novas, apagadas, mantidas = _gravar(conn, obras, do_leitor, genero_id)
     resumo = ResumoTecnicas(
@@ -597,5 +742,5 @@ def _registrar(r: ResumoTecnicas) -> None:
         r.apagadas,
         r.mantidas_em_uso,
     )
-    log.info("  works duplicadas fundidas nas Obras da lista curada: %d", r.fundidas)
+    log.info("  works duplicadas juntadas a outra Obra: %d", r.fundidas)
     log.info("  Obras do Leitor que viraram técnicas pela work: %d", r.do_leitor)
