@@ -580,7 +580,7 @@ Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-libr
 - **β = 0**: a popularidade não entra;
 - as candidatas são as Obras técnicas: as Obras `open_library` e as Obras técnicas da Base;
 - as exclusões são as mesmas do §8.5 a §8.7: Estante, Dispensas, Quero ler e Estou lendo;
-- Contribuintes, Motivo e o mínimo de 3 Leituras com Nota são os mesmos. Qualquer Leitura com Nota pode ser Contribuinte, técnica ou não;
+- Contribuintes, Motivo e o mínimo de 3 Leituras com Nota são os mesmos. Só as Leituras técnicas (do Gênero Tecnologia) são Contribuintes, desde que uma delas tenha Nota ≥ 4. Sem isso, contam todas as Leituras com Nota, para a aba não ficar vazia (critério do R14). Antes, todas contavam sempre, e as Leituras de negócios e psicologia, mais numerosas, puxavam o topo para livros de divulgação (*The Design of Everyday Things*, *The Phoenix Project*), com Motivos como *Thinking, Fast and Slow* (decisão do Leitor, 25/11/2026);
 - tem o filtro de idioma (`so_edicao_pt`) e não tem o filtro de Gênero.
 
 `recomendacao.pontuacao`, `para_voce` e o teste de paridade com o SQL não mudam. A meta de desempenho é a do §8.5: ≤ 500 ms com 500 Leituras.

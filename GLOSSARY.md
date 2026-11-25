@@ -96,7 +96,7 @@ Uma Sugestão de Obra técnica, pontuada só pela Similaridade de conteúdo e mo
 _Evite_: recomendação técnica, sugestão de TI
 
 **Contribuinte**:
-Uma Leitura de Nota alta que somou pontos a uma Sugestão, com a sua participação: a fração que ela deu da soma das parcelas positivas.
+Uma Leitura de Nota alta que somou pontos a uma Sugestão, com a sua participação: a fração que ela deu da soma das parcelas positivas. Na aba "Tecnologia", só as Leituras técnicas, se alguma tem Nota alta.
 _Evite_: fator, causa
 
 **Motivo**:
