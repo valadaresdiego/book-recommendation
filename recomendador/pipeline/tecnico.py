@@ -86,10 +86,12 @@ def calcular_tecnico(
         log.info("Nenhuma Obra técnica no Catálogo: rode `carregar-tecnicas` antes")
         return _VAZIO
 
+    # Só as da Open Library: a do Leitor fica pendente para o app ou o `atualizar`, que
+    # gravam o embedding junto com os Vizinhos de conteúdo dela (§7.3, §10).
     faltam = list(
         conn.execute(
             text(
-                "SELECT id FROM obra WHERE id = ANY(:t) "
+                "SELECT id FROM obra WHERE id = ANY(:t) AND origem = 'open_library' "
                 "AND embedding_execucao_id IS DISTINCT FROM :e ORDER BY id"
             ),
             {"t": sorted(tecnicas), "e": ativa.id},
