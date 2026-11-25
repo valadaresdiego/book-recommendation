@@ -5,12 +5,11 @@ vêm de um KNN no pgvector (HNSW) restrito às Obras da Base de coleitura. Com u
 `tecnico` ativa, a Obra ganha também os Vizinhos técnicos, entre as Obras técnicas (§8.8).
 """
 
-import numpy as np
 from sqlalchemy import Connection, text
 
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA
 from recomendador.catalogo.texto import normalizar
-from recomendador.recomendacao.embeddings import Codificador
+from recomendador.recomendacao.embeddings import Codificador, vetor_pgvector
 from recomendador.recomendacao.texto import carregar_dados, texto_da_obra
 
 K = 50
@@ -73,7 +72,7 @@ def calcular_vizinhos_da_obra(
     if codificador.nome != modelo:
         raise ModeloDiferente(f"Execução ativa usa {modelo}, não {codificador.nome}")
     dados = carregar_dados(conn, [obra_id])[obra_id]
-    vetor = _vetor(codificador.codificar([texto_da_obra(dados)])[0])
+    vetor = vetor_pgvector(codificador.codificar([texto_da_obra(dados)])[0])
     conn.execute(
         text(
             "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "
@@ -159,7 +158,3 @@ def _gravar_vizinhos(
             ],
         )
     return len(escolhidas)
-
-
-def _vetor(v: np.ndarray) -> str:
-    return "[" + ",".join(f"{x:.6g}" for x in v) + "]"

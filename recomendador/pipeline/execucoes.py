@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 from sqlalchemy import Connection, text
 
+from recomendador.recomendacao.embeddings import vetor_pgvector
+
 log = logging.getLogger(__name__)
 
 METRICA = "ndcg@20"
@@ -99,12 +101,11 @@ def _copiar_embeddings(conn: Connection, execucao_id: int, pasta: Path) -> None:
             "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "
             "WHERE id = :o"
         ),
-        [{"o": int(o), "v": _vetor(v), "e": execucao_id} for o, v in zip(ids, e, strict=True)],
+        [
+            {"o": int(o), "v": vetor_pgvector(v), "e": execucao_id}
+            for o, v in zip(ids, e, strict=True)
+        ],
     )
-
-
-def _vetor(v: np.ndarray) -> str:
-    return "[" + ",".join(f"{x:.6g}" for x in v) + "]"
 
 
 def copiar_vizinhos(conn: Connection, linhas: list[tuple]) -> None:

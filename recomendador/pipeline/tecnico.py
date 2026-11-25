@@ -16,8 +16,8 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA
 from recomendador.catalogo.texto import normalizar
 from recomendador.pipeline.conteudo import MAX_MESMO_AUTOR, K, top_vizinhos
-from recomendador.pipeline.execucoes import _vetor, copiar_vizinhos
-from recomendador.recomendacao.embeddings import Codificador
+from recomendador.pipeline.execucoes import copiar_vizinhos
+from recomendador.recomendacao.embeddings import Codificador, vetor_pgvector
 from recomendador.recomendacao.interativo import ModeloDiferente
 from recomendador.recomendacao.pontuacao import escala
 from recomendador.recomendacao.texto import carregar_dados, texto_da_obra
@@ -62,7 +62,7 @@ def _gerar_embeddings(
             "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "
             "WHERE id = :o"
         ),
-        [{"o": o, "v": _vetor(v), "e": execucao} for o, v in zip(ids, e, strict=True)],
+        [{"o": o, "v": vetor_pgvector(v), "e": execucao} for o, v in zip(ids, e, strict=True)],
     )
     return len(ids)
 

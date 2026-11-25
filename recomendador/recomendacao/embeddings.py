@@ -100,3 +100,8 @@ def normalizar(e: np.ndarray) -> np.ndarray:
         raise ValueError(f"Embedding com {e.shape[1]} dimensões; esperado {DIMENSAO_EMBEDDING}")
     normas = np.linalg.norm(e, axis=1, keepdims=True)
     return (e / np.where(normas == 0, 1, normas)).astype(np.float32)
+
+
+def vetor_pgvector(v: np.ndarray) -> str:
+    """O vetor no formato de texto do pgvector, para `CAST(:v AS vector)`."""
+    return "[" + ",".join(f"{x:.6g}" for x in v) + "]"

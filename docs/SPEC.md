@@ -272,7 +272,7 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
 `obra_genero.forca` = soma das `contagem` das tags do Gênero na Obra ÷ soma de todas as `contagem` úteis da Obra. Uma Obra pertence ao Gênero se `forca ≥ 0,05`.
 
 - **Tecnologia** usa só tags estritas. `technology` e `tech` ficam de fora, porque marcam livros *sobre* tecnologia (*Steve Jobs*). Uma Obra que também é de "Biografias e memórias" sai de Tecnologia (*Ghost in the Wires*). Com essas regras, entram 4 Obras da Base: *The Pragmatic Programmer*, *Don't Make Me Think*, *The Phoenix Project* e *The Design of Everyday Things*.
-- As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`. Os assuntos delas têm `contagem = 0`, então o `mapear-generos` não mexe nas linhas delas.
+- As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`, e também as do Leitor cuja work é técnica (§8.8, passo 6). Os assuntos da Open Library têm `contagem = 0` e não refariam essa linha, então o `mapear-generos` preserva a Tecnologia de toda Obra que não é da Base. A regra de Biografias e memórias vale para todas.
 
 ---
 
@@ -400,7 +400,7 @@ sim[i,j] = num[i,j] / (‖R[:,i]‖·‖R[:,j]‖) × n[i,j] / (n[i,j] + λ)
 `recomendacao.pagina_da_obra(obra_id, leitor_id) -> PaginaObra`:
 
 - Mostra capa, `titulo_exibicao` (com o título original abaixo, se for diferente), autor, ano, descrição, Gêneros, a Nota do Leitor (se já leu) e as ações.
-- **R5a "Parecidos com este":** os top 10 Vizinhos da execução de conteúdo ativa. Numa Obra técnica (do Gênero Tecnologia), os top 10 da execução `tecnico` ativa (§8.8).
+- **R5a "Parecidos com este":** os top 10 Vizinhos da execução de conteúdo ativa. Numa Obra técnica (do Gênero Tecnologia), os top 10 da execução `tecnico` ativa (§8.8). Se a Obra técnica ainda não tem Vizinhos técnicos (Obra do Leitor pendente, ou nenhuma execução `tecnico` ativa), mostra os de conteúdo, para a seção não ficar vazia.
 - **R5b "Quem leu este também gostou":** os top 10 Vizinhos da execução de coleitura ativa. Se não houver nenhum, mostra o texto exato do PRD: "Ainda não há dados de outros leitores para este livro". Nenhuma outra fonte preenche a seção.
 - Obras da Estante aparecem com o selo **"lido"**.
 - Cada item é um link para `?obra=<id>`, o que permite navegar em cadeia.
@@ -542,7 +542,7 @@ Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-libr
    - `titulo` e `autor`, para conferência;
    - opcionalmente, `fundir`: as works duplicadas da mesma Obra (*Refactoring* tem 7 no dump). Os ISBNs delas entram na Obra.
 
-   A carga falha com mensagem clara se uma chave não existir no dump ou se o título dela não bater com o da lista. Os itens da lista entram com `curada = true`, mesmo fora do corte e mesmo sem assunto técnico (*SICP*).
+   A carga falha com mensagem clara se uma chave (de `work` ou de `fundir`) não existir no dump ou se o título da `work` não bater com o da lista. Os itens da lista entram com `curada = true`, mesmo fora do corte e mesmo sem assunto técnico (*SICP*).
 5. **Obra.** Cada work selecionada vira uma Obra com `origem='open_library'`:
    - `titulo` = título da work (com o subtítulo, se houver);
    - `autores` = nomes do dump de `authors`, na ordem da work;
@@ -556,7 +556,7 @@ Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-libr
 
    Assim, uma Edição técnica achada na busca (§7.1) cai direto na Obra pelo passo 1 do §7.2.
 6. **Obras que já existem.** Uma work já ligada a uma Obra (`ol_work_key`) não vira Obra nova:
-   - se a Obra é do Leitor (`origem='leitor'`), ela ganha Tecnologia com `forca = 1`;
+   - se a Obra é do Leitor (`origem='leitor'`), ela ganha Tecnologia com `forca = 1` quando a work é técnica pelo passo 1, mesmo fora do corte: o corte só escolhe candidatas novas. A work no ruído (ficção, anais) e a Obra de Biografias e memórias (§6.3) ficam de fora;
    - se é da Base, fica como está. O Gênero dela vem só das tags.
 7. **Idempotência.** O upsert é por `ol_work_key`. Uma Obra `origem='open_library'` que sai do corte numa carga nova é apagada se não tiver Leitura, lista (Quero ler, Estou lendo, Dispensa), Edição nem evento. Se tiver, fica.
 8. **`enriquecer-ol` depois.** As works das Obras `open_library` contam como ocupadas, como as do Leitor: nenhuma Obra da Base fica com elas. Os ISBNs `origem='open_library'` dessas Obras são do `carregar-tecnicas`, e o `enriquecer-ol` só refaz os das outras Obras.

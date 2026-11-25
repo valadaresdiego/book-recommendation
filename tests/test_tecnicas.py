@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import Connection, text
 
 from recomendador.catalogo.busca import buscar_no_catalogo
-from recomendador.catalogo.generos import SLUG_TECNOLOGIA, sincronizar_generos
+from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA, sincronizar_generos
 from recomendador.catalogo.isbn import completar_isbn13
 from recomendador.config import LEITOR_ID
 from recomendador.pipeline.tecnicas import CuradaInvalida, carregar_tecnicas
@@ -166,6 +166,7 @@ def test_corte_lista_curada_e_obras_que_ja_existem(
     assert set(obras) == {"/works/OL1W", "/works/OL2W", "/works/OL3W", "/works/OL10W"}
     assert r.por_ramo == {"edicoes": 1, "editora": 2, "curada": 1}
     assert (r.obras, r.novas, r.apagadas, r.do_leitor) == (4, 4, 0, 1)
+    assert r.fundidas == 1  # a work duplicada de Refactoring
 
     big = obras["/works/OL1W"]
     assert big["titulo"] == big["titulo_exibicao"] == "Big Book: Of Code"
@@ -198,6 +199,41 @@ def test_corte_lista_curada_e_obras_que_ja_existem(
         text("SELECT tag, contagem FROM obra_tag WHERE obra_id = :o"), {"o": fluent["id"]}
     ).all()
     assert assuntos == [("python (computer program language)", 0)]
+
+
+def test_obra_do_leitor_e_tecnica_pelo_assunto_mesmo_fora_do_corte(
+    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+) -> None:
+    """§8.8, passo 6: o corte escolhe candidatas a Sugestão; a Obra que o Leitor já tem
+    vira técnica pelo assunto. A work de ficção (ruído) continua de fora."""
+    antigo = criar_obra(conexao, "Antigo", ol_work_key="/works/OL5W", origem="leitor")
+    robos = criar_obra(conexao, "Robos", ol_work_key="/works/OL7W", origem="leitor")
+
+    r = carregar_tecnicas(conexao, dumps, curados=curados)
+
+    assert antigo in _tecnicas(conexao)
+    assert robos not in _tecnicas(conexao)
+    assert r.do_leitor == 2  # Antigo e Do Leitor
+    assert "/works/OL5W" not in _obras(conexao)
+
+
+def test_obra_do_leitor_de_biografias_nao_vira_tecnica(
+    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+) -> None:
+    """A mesma regra do `mapear-generos` (§6.3): Biografias e memórias sai de Tecnologia.
+    Sem ela, a ordem dos comandos decidiria o Gênero da Obra."""
+    conexao.execute(
+        text(
+            "INSERT INTO obra_genero (obra_id, genero_id, forca) "
+            "SELECT :o, id, 0.4 FROM genero WHERE slug = :s"
+        ),
+        {"o": catalogo["leitor"], "s": SLUG_BIOGRAFIAS},
+    )
+
+    r = carregar_tecnicas(conexao, dumps, curados=curados)
+
+    assert catalogo["leitor"] not in _tecnicas(conexao)
+    assert r.do_leitor == 0
 
 
 def test_carga_e_idempotente(
@@ -259,6 +295,10 @@ def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
     [
         ("- {work: /works/OL99W, titulo: Sumida, autor: X}", "não está no dump"),
         ("- {work: /works/OL1W, titulo: Outro Livro, autor: X}", "não começa por"),
+        (
+            "- {work: /works/OL10W, titulo: Refactoring, autor: X, fundir: [/works/OL98W]}",
+            "/works/OL98W.*não está no dump",
+        ),
         (
             "- {work: /works/OL1W, titulo: Big, autor: X}\n"
             "- {work: /works/OL2W, titulo: Fluent, autor: X, fundir: [/works/OL1W]}",
