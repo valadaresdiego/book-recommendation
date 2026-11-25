@@ -134,7 +134,7 @@ _CONSULTA = text(
           WHERE og.obra_id = p.candidata AND g.slug = ANY(CAST(:generos AS text[]))
       ))
       AND (NOT :so_edicao_pt OR o.tem_edicao_pt)
-      AND (:tecnologia OR o.origem <> 'open_library')
+      AND (:com_open_library OR o.origem <> 'open_library')
     ORDER BY p.pontuacao DESC, o.popularidade DESC, o.id
     LIMIT :limite
     """
@@ -166,7 +166,6 @@ def para_voce(
         beta=cfg.beta_popularidade,
         generos=generos,
         so_edicao_pt=so_edicao_pt,
-        tecnologia=False,
     )
 
 
@@ -184,7 +183,6 @@ def para_voce_tecnologia(
         beta=0.0,
         generos=(),
         so_edicao_pt=so_edicao_pt,
-        tecnologia=True,
     )
 
 
@@ -200,7 +198,6 @@ def _sugestoes(
     beta: float,
     generos: Sequence[str],
     so_edicao_pt: bool,
-    tecnologia: bool,
 ) -> ParaVoce:
     cfg = config()
     notas = conn.execute(
@@ -231,7 +228,8 @@ def _sugestoes(
             "contribuintes": CONTRIBUINTES,
             "generos": list(generos),
             "so_edicao_pt": so_edicao_pt,
-            "tecnologia": tecnologia,
+            # Só a execução `tecnico` sugere Obras da Open Library (ADR 0009).
+            "com_open_library": "tecnico" in tipos,
         },
     )
     sugestoes = [

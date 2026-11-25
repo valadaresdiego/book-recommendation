@@ -24,14 +24,14 @@ from sqlalchemy import Connection, text
 
 from recomendador.catalogo.fontes.open_library import URL_CAPA, ano_de, texto_descricao
 from recomendador.catalogo.fontes.open_library import assuntos as assuntos_ol
-from recomendador.catalogo.generos import SLUG_TECNOLOGIA
+from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA
 from recomendador.catalogo.texto import normalizar
 from recomendador.pipeline.enriquecimento_ol import (
-    _RE_WORK,
-    _em_portugues,
-    _isbns_da_edicao,
-    _json,
-    _linhas,
+    RE_WORK,
+    em_portugues,
+    isbns_da_edicao,
+    json_da_linha,
+    linhas_do_dump,
     localizar_dump,
 )
 
@@ -187,7 +187,7 @@ def _ler_works(
     """Passada 1: (works técnicas fora do ruído, works da lista curada)."""
     tecnicas: dict[str, WorkLida] = {}
     da_lista: dict[str, WorkLida] = {}
-    for linha in _linhas(caminho):
+    for linha in linhas_do_dump(caminho):
         partes = linha.split("\t", 2)
         if len(partes) < 2:
             continue
@@ -196,7 +196,7 @@ def _ler_works(
             inicio = linha.find('"subjects"')
             if inicio < 0 or not _RE_RADICAIS.search(linha, inicio, linha.find("]", inicio)):
                 continue
-        if (dados := _json(linha)) is None or not dados.get("key"):
+        if (dados := json_da_linha(linha)) is None or not dados.get("key"):
             continue
         w = _work_lida(dados)
         if chave in curadas:
@@ -215,9 +215,9 @@ def _ano_da_edicao(publish_date: object) -> int | None:
 def _ler_edicoes(caminho: Path, works: set[str]) -> dict[str, EdicoesDaWork]:
     """Passada 2: as Edições de cada work pedida."""
     por_work: dict[str, EdicoesDaWork] = {}
-    for linha in _linhas(caminho):
-        m = _RE_WORK.search(linha)
-        if not m or m.group(1) not in works or (dados := _json(linha)) is None:
+    for linha in linhas_do_dump(caminho):
+        m = RE_WORK.search(linha)
+        if not m or m.group(1) not in works or (dados := json_da_linha(linha)) is None:
             continue
         e = por_work.setdefault(m.group(1), EdicoesDaWork())
         e.quantas += 1
@@ -227,8 +227,8 @@ def _ler_edicoes(caminho: Path, works: set[str]) -> dict[str, EdicoesDaWork]:
         e.editoras |= {
             p.strip() for p in dados.get("publishers") or [] if isinstance(p, str) and p.strip()
         }
-        e.isbns |= _isbns_da_edicao(dados)
-        portugues = _em_portugues(dados)
+        e.isbns |= isbns_da_edicao(dados)
+        portugues = em_portugues(dados)
         e.em_portugues |= portugues > 0
         titulo = " ".join(str(dados.get("title") or "").split())
         if titulo and portugues:
@@ -241,9 +241,9 @@ def _ler_edicoes(caminho: Path, works: set[str]) -> dict[str, EdicoesDaWork]:
 def _ler_autores(caminho: Path, chaves: set[str]) -> dict[str, str]:
     """Passada 3: o nome de cada autor pedido."""
     nomes: dict[str, str] = {}
-    for linha in _linhas(caminho):
+    for linha in linhas_do_dump(caminho):
         partes = linha.split("\t", 2)
-        if len(partes) < 2 or partes[1] not in chaves or (dados := _json(linha)) is None:
+        if len(partes) < 2 or partes[1] not in chaves or (dados := json_da_linha(linha)) is None:
             continue
         if nome := " ".join(str(dados.get("name") or "").split()):
             nomes[partes[1]] = nome
@@ -269,9 +269,12 @@ def ramo_do_corte(e: EdicoesDaWork | None, editoras: re.Pattern) -> str | None:
     return None
 
 
-def _conferir_curada(c: Curada, w: WorkLida | None) -> None:
-    if w is None:
+def _conferir_curada(c: Curada, da_lista: dict[str, WorkLida]) -> None:
+    if (w := da_lista.get(c.work)) is None:
         raise CuradaInvalida(f"{c.work} ({c.titulo}) não está no dump de works")
+    for f in c.fundir:
+        if f not in da_lista:
+            raise CuradaInvalida(f"{f}, a fundir em {c.work} ({c.titulo}), não está no dump")
     if not normalizar(w.titulo).startswith(normalizar(c.titulo)):
         raise CuradaInvalida(
             f"{c.work}: o título no dump é {w.titulo!r}, não começa por {c.titulo!r}"
@@ -305,6 +308,7 @@ class ResumoTecnicas:
     novas: int
     apagadas: int
     mantidas_em_uso: int  # saíram do corte, mas têm Leitura, lista, Edição ou evento
+    fundidas: int  # works duplicadas da lista curada, cujos ISBNs foram para a Obra principal
     do_leitor: int  # Obras do Leitor que viraram técnicas pela work
     com_descricao: int
     com_edicao_pt: int
@@ -488,7 +492,7 @@ def carregar_tecnicas(
     log.info("Passada 1/3 (%s): works técnicas e da lista curada", works_dump.name)
     tecnicas, da_lista = _ler_works(works_dump, criterio, principais | duplicadas)
     for c in curadas:
-        _conferir_curada(c, da_lista.get(c.work))
+        _conferir_curada(c, da_lista)
     log.info("  %d works técnicas fora do ruído; %d da lista curada", len(tecnicas), len(curadas))
 
     log.info("Passada 2/3 (%s): Edições", editions_dump.name)
@@ -496,34 +500,43 @@ def carregar_tecnicas(
 
     # Uma work que já é de uma Obra da Base ou do Leitor não vira Obra nova (§8.8, passo 6).
     ocupadas = {
-        r.ol_work_key: (r.id, r.origem)
+        r.ol_work_key: (r.id, r.origem, r.biografia)
         for r in conn.execute(
             text(
-                "SELECT ol_work_key, id, origem::text AS origem FROM obra "
-                "WHERE origem IN ('base', 'leitor') AND ol_work_key IS NOT NULL"
-            )
+                """
+                SELECT o.ol_work_key, o.id, o.origem::text AS origem,
+                       EXISTS (SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+                               WHERE og.obra_id = o.id AND g.slug = :b) AS biografia
+                FROM obra o
+                WHERE o.origem IN ('base', 'leitor') AND o.ol_work_key IS NOT NULL
+                """
+            ),
+            {"b": SLUG_BIOGRAFIAS},
         )
     }
     escolhidas: dict[str, tuple[WorkLida, bool, set[str]]] = {}
     por_ramo = {"edicoes": 0, "editora": 0, "curada": 0}
     do_leitor: list[int] = []
     da_base = 0
+    fundidas = 0
 
     def ocupada(chave: str) -> bool:
         nonlocal da_base
         if chave not in ocupadas:
             return False
-        obra_id, origem = ocupadas[chave]
-        if origem == "leitor":
+        obra_id, origem, biografia = ocupadas[chave]
+        # Biografias e memórias não é Tecnologia, como no `mapear-generos` (§6.3).
+        if origem == "leitor" and not biografia:
             do_leitor.append(obra_id)
         else:
             da_base += 1
         return True
 
     for chave, w in tecnicas.items():
-        if chave in duplicadas or chave in principais:
+        # A Obra do Leitor é técnica pelo assunto: o corte só escolhe candidatas novas.
+        if chave in duplicadas or chave in principais or ocupada(chave):
             continue
-        if (ramo := ramo_do_corte(edicoes.get(chave), re_editoras)) and not ocupada(chave):
+        if ramo := ramo_do_corte(edicoes.get(chave), re_editoras):
             por_ramo[ramo] += 1
             escolhidas[chave] = (w, False, set())
     for c in curadas:
@@ -531,6 +544,7 @@ def carregar_tecnicas(
             extras = {i for f in c.fundir for i in edicoes.get(f, EdicoesDaWork()).isbns}
             escolhidas[c.work] = (da_lista[c.work], True, extras)
             por_ramo["curada"] += 1
+            fundidas += len(c.fundir)
     if da_base:
         log.info("  %d works já são de Obras da Base e ficam como estão", da_base)
 
@@ -550,6 +564,7 @@ def carregar_tecnicas(
         novas=novas,
         apagadas=apagadas,
         mantidas_em_uso=mantidas,
+        fundidas=fundidas,
         do_leitor=len(do_leitor),
         com_descricao=sum(o.descricao is not None for o in obras),
         com_edicao_pt=sum(o.em_portugues for o in obras),
@@ -573,4 +588,5 @@ def _registrar(r: ResumoTecnicas) -> None:
         r.apagadas,
         r.mantidas_em_uso,
     )
+    log.info("  works duplicadas fundidas nas Obras da lista curada: %d", r.fundidas)
     log.info("  Obras do Leitor que viraram técnicas pela work: %d", r.do_leitor)

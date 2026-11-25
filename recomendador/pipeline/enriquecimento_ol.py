@@ -30,7 +30,7 @@ _PALAVRA_PARECIDA = 0.8  # semelhança mínima (difflib) para duas palavras cont
 
 _RE_ISBNS = re.compile(r'"isbn_1[03]"\s*:\s*\[([^\]]*)\]')
 _RE_ITEM = re.compile(r'"([^"]*)"')
-_RE_WORK = re.compile(r'"works"\s*:\s*\[\s*\{\s*"key"\s*:\s*"(/works/[^"]+)"')
+RE_WORK = re.compile(r'"works"\s*:\s*\[\s*\{\s*"key"\s*:\s*"(/works/[^"]+)"')
 _RE_ANO = re.compile(r"\b(\d{4})\b")
 _RE_TITULO = re.compile(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _PORTUGUES = "/languages/por"
@@ -71,7 +71,7 @@ def localizar_dump(pasta: Path, tipo: str) -> Path:
     return candidatos[-1]
 
 
-def _linhas(caminho: Path) -> Iterator[str]:
+def linhas_do_dump(caminho: Path) -> Iterator[str]:
     abrir = gzip.open if caminho.suffix == ".gz" else open
     with abrir(caminho, "rt", encoding="utf-8", errors="replace") as f:
         for i, linha in enumerate(f, 1):
@@ -80,7 +80,7 @@ def _linhas(caminho: Path) -> Iterator[str]:
             yield linha
 
 
-def _json(linha: str) -> dict | None:
+def json_da_linha(linha: str) -> dict | None:
     partes = linha.rstrip("\n").split("\t", 4)
     if len(partes) < 5:
         return None
@@ -90,7 +90,7 @@ def _json(linha: str) -> dict | None:
         return None
 
 
-def _isbns_da_edicao(dados: dict) -> set[str]:
+def isbns_da_edicao(dados: dict) -> set[str]:
     brutos = list(dados.get("isbn_13") or []) + list(dados.get("isbn_10") or [])
     return {n for b in brutos if isinstance(b, str) and (n := normalizar_isbn(b))}
 
@@ -109,7 +109,7 @@ def _votar_works(editions: Path, obra_por_isbn: dict[str, int]) -> Counter[tuple
     Library vieram da work escolhida antes e votariam sempre nela, mesmo errada.
     """
     votos: Counter[tuple[int, str]] = Counter()
-    for linha in _linhas(editions):
+    for linha in linhas_do_dump(editions):
         candidatos = {
             n
             for grupo in _RE_ISBNS.findall(linha)
@@ -117,7 +117,11 @@ def _votar_works(editions: Path, obra_por_isbn: dict[str, int]) -> Counter[tuple
             if (n := normalizar_isbn(item))
         }
         obras = {obra_por_isbn[i] for i in candidatos if i in obra_por_isbn}
-        if not obras or (dados := _json(linha)) is None or not (work := _work_da_edicao(dados)):
+        if (
+            not obras
+            or (dados := json_da_linha(linha)) is None
+            or not (work := _work_da_edicao(dados))
+        ):
             continue
         for obra_id in obras:
             votos[(obra_id, work)] += 1
@@ -223,14 +227,14 @@ def _ler_works(
             obras_por_titulo.setdefault(t, []).append(obra.id)
     lidas: dict[str, Work] = {}
     mesmo_titulo: dict[int, set[str]] = {}
-    for linha in _linhas(works):
+    for linha in linhas_do_dump(works):
         partes = linha.split("\t", 2)
         if len(partes) < 2 or partes[1] in works_ocupados:
             continue
         chave = partes[1]
         if chave not in votadas and not any(t in filtro for t in _titulos_da_linha(linha)):
             continue
-        if (dados := _json(linha)) is None:
+        if (dados := json_da_linha(linha)) is None:
             continue
         work = Work.de(dados)
         obras_da_work = {o for t in work.titulos for o in obras_por_titulo.get(t, ())}
@@ -372,14 +376,14 @@ def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWor
     """Passada 3: por work, quantas Edições, todos os ISBNs, se há Edição em português e
     o título pt mais recente."""
     por_work: dict[str, _EdicoesDaWork] = {}
-    for linha in _linhas(editions):
-        m = _RE_WORK.search(linha)
-        if not m or m.group(1) not in works or (dados := _json(linha)) is None:
+    for linha in linhas_do_dump(editions):
+        m = RE_WORK.search(linha)
+        if not m or m.group(1) not in works or (dados := json_da_linha(linha)) is None:
             continue
         e = por_work.setdefault(m.group(1), _EdicoesDaWork())
         e.quantas += 1
-        e.isbns |= _isbns_da_edicao(dados)
-        portugues = _em_portugues(dados)
+        e.isbns |= isbns_da_edicao(dados)
+        portugues = em_portugues(dados)
         e.em_portugues |= portugues > 0
         titulo = (dados.get("title") or "").strip()
         if titulo and portugues:
@@ -389,7 +393,7 @@ def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWor
     return por_work
 
 
-def _em_portugues(dados: dict) -> int:
+def em_portugues(dados: dict) -> int:
     """2 se a Edição declara português; 1 se não declara idioma e tem ISBN brasileiro; 0 se não.
 
     A reserva pelo ISBN (prefixos 978-85 e 978-65) cobre as Edições brasileiras que a
@@ -398,7 +402,7 @@ def _em_portugues(dados: dict) -> int:
     idiomas = {i.get("key") for i in dados.get("languages") or [] if isinstance(i, dict)}
     if _PORTUGUES in idiomas:
         return 2
-    if not idiomas and any(i.startswith(_PREFIXOS_BR) for i in _isbns_da_edicao(dados)):
+    if not idiomas and any(i.startswith(_PREFIXOS_BR) for i in isbns_da_edicao(dados)):
         return 1
     return 0
 
@@ -407,9 +411,9 @@ def _coletar_works(works: Path, chaves: Set[str]) -> tuple[dict[str, str], dict[
     """Passada 4: descrição e assuntos das works escolhidas (e das anteriores)."""
     descricoes: dict[str, str] = {}
     assuntos: dict[str, list[str]] = {}
-    for linha in _linhas(works):
+    for linha in linhas_do_dump(works):
         partes = linha.split("\t", 2)
-        if len(partes) < 2 or partes[1] not in chaves or (dados := _json(linha)) is None:
+        if len(partes) < 2 or partes[1] not in chaves or (dados := json_da_linha(linha)) is None:
             continue
         if d := texto_descricao(dados.get("description")):
             descricoes[partes[1]] = d
