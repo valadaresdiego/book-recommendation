@@ -340,6 +340,20 @@ def test_pagina_da_obra_em_estou_lendo(conexao: Connection) -> None:
 # --- fase 6: aba "Tecnologia" (SPEC §8.8) ---
 
 
+def test_lista_geral_nao_tem_o_chip_tecnologia(conexao: Connection) -> None:
+    """Os livros técnicos têm a aba própria; na lista geral o chip só traria os da Base."""
+    _para_voce_com_3_notas(conexao)
+    criar_genero(conexao, "fantasia", "Fantasia")
+    criar_genero(conexao, "tecnologia", "Tecnologia")
+
+    at = _pagina("para_voce").run()
+
+    assert not at.exception
+    opcoes = list(at.pills(key="pv-generos").options)
+    assert "Fantasia" in opcoes
+    assert "Tecnologia" not in opcoes
+
+
 def test_aba_tecnologia_mostra_as_sugestoes_tecnicas(conexao: Connection) -> None:
     obras = _para_voce_com_3_notas(conexao)
     tecnicas = [

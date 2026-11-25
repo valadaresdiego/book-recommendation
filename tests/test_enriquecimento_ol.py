@@ -256,6 +256,39 @@ def test_dump_ausente(conexao: Connection, tmp_path: Path) -> None:
         enriquecer_ol(conexao, tmp_path)
 
 
+def test_titulo_em_portugues_sem_o_ruido_do_idioma(conexao: Connection, tmp_path: Path) -> None:
+    """O "(Em Portugues do Brasil)" das Edições importadas de livrarias não vai para o
+    título de exibição; um parêntese que é do título fica."""
+    _dump(
+        tmp_path / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [
+            ("/books/OL1M", _edicao("/works/OL3W", isbn13=[FUNDACAO])),
+            (
+                "/books/OL2M",
+                _edicao(
+                    "/works/OL3W",
+                    idioma="por",
+                    titulo="Fundação (Colecao: Trilogia) (Em Portugues do Brasil)",
+                ),
+            ),
+            ("/books/OL3M", _edicao("/works/OL5W", isbn13=[NEUROMANCER])),
+            (
+                "/books/OL4M",
+                _edicao("/works/OL5W", idioma="por", titulo="Neuromancer (Portuguese Edition)"),
+            ),
+        ],
+    )
+    _dump(tmp_path / "ol_dump_works_2026-10-31.txt.gz", "work", [])
+    fundacao = _obra(conexao, "Foundation", FUNDACAO)
+    neuromancer = _obra(conexao, "Neuromancer", NEUROMANCER)
+
+    enriquecer_ol(conexao, tmp_path)
+
+    assert _linha(conexao, fundacao)["titulo_exibicao"] == "Fundação (Colecao: Trilogia)"
+    assert _linha(conexao, neuromancer)["titulo_exibicao"] == "Neuromancer"
+
+
 def test_isbn_brasileiro_vale_como_edicao_em_portugues_sem_idioma(
     conexao: Connection, tmp_path: Path
 ) -> None:

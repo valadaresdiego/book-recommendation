@@ -3,6 +3,9 @@
 # Uma work é técnica se algum dos seus `subjects`, em minúsculas e com espaços simples,
 # for igual a um item de `iguais`, começar por um item de `prefixos` ou terminar por um
 # item de `sufixos`. Medido em 19/11/2026: ~94 mil works.
+#
+# "Artificial intelligence" sozinho não faz work técnica (decisão do Leitor, 25/11/2026):
+# sem outro assunto daqui, são anais, divulgação e biografias (Superinteligência, Turing).
 iguais:
   - computer programming
   - programming
@@ -22,7 +25,6 @@ iguais:
   - devops
   - software architecture
   - data mining
-  - artificial intelligence
   - computer programming, programs, data
   - programming languages (electronic computers)
   - software engineering -- management
@@ -32,7 +34,6 @@ prefixos:
   - software engineering
   - machine learning
   - database management
-  - artificial intelligence
   - data mining
   - agile software development
   - software architecture

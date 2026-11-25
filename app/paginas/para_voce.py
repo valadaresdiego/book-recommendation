@@ -40,8 +40,13 @@ def _para_voce(lista: str, generos: tuple[str, ...], so_edicao_pt: bool) -> reco
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _generos() -> dict[str, str]:
+    """Os chips da lista geral. Tecnologia fica de fora: tem a aba própria (§8.8)."""
     with catalogo.transacao() as conn:
-        return {g.slug: g.nome for g in catalogo.listar_generos(conn)}
+        return {
+            g.slug: g.nome
+            for g in catalogo.listar_generos(conn)
+            if g.slug != catalogo.SLUG_TECNOLOGIA
+        }
 
 
 def _registrar_exibicao(r: recomendacao.ParaVoce, filtros: tuple) -> None:

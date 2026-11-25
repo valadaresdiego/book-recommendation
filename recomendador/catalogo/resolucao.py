@@ -16,7 +16,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.busca import buscar_no_catalogo
 from recomendador.catalogo.fontes import FonteIndisponivel
 from recomendador.catalogo.fontes.open_library import EdicaoOL, ObraOL, OpenLibrary
-from recomendador.catalogo.texto import normalizar, sobrenome
+from recomendador.catalogo.texto import normalizar, sobrenome, titulo_sem_ruido
 from recomendador.catalogo.tipos import Candidata, ObraProposta, Resolucao, ResultadoBusca
 
 log = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def _proposta(
     return ObraProposta(
         titulo=titulo,
         titulo_original=titulo_original,
-        titulo_exibicao=edicao.titulo if em_portugues else titulo,
+        titulo_exibicao=titulo_sem_ruido(edicao.titulo) if em_portugues else titulo,
         autores=edicao.autores,
         ano_original=(obra_ol.ano if obra_ol else None) or edicao.ano,
         descricao=(obra_ol.descricao if obra_ol else None) or edicao.descricao,
@@ -330,7 +330,7 @@ def registrar_resolucao(
                 "UPDATE obra SET titulo_exibicao = :t "
                 "WHERE id = :o AND titulo_exibicao = titulo AND titulo <> :t"
             ),
-            {"t": edicao.titulo, "o": obra_id},
+            {"t": titulo_sem_ruido(edicao.titulo), "o": obra_id},
         )
     edicao_ol = resolucao.edicao_ol
     if edicao.idioma == "pt" or (edicao_ol is not None and "por" in edicao_ol.idiomas):

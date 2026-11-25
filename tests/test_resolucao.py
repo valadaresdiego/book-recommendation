@@ -249,6 +249,24 @@ def test_nao_troca_titulo_de_exibicao_que_ja_esta_em_portugues(
     assert linha(conexao, "obra", messias)["titulo_exibicao"] == "O Messias de Duna"
 
 
+def test_titulo_da_edicao_em_portugues_sem_o_ruido_do_idioma(
+    conexao: Connection, ol: OpenLibrary
+) -> None:
+    escolhido = ResultadoBusca(
+        titulo="Torto arado (Em Portugues do Brasil)",
+        autores=("Itamar Vieira Junior",),
+        ano=2019,
+        capa_url=None,
+        google_volume_id="vol-torto",
+        isbns=(TORTO_ARADO_TODAVIA,),
+        idioma="pt",
+    )
+
+    registrada = registrar_resolucao(conexao, resolver_obra(conexao, escolhido, ol))
+
+    assert linha(conexao, "obra", registrada.obra_id)["titulo_exibicao"] == "Torto arado"
+
+
 def test_registrar_obra_nova(conexao: Connection, ol: OpenLibrary) -> None:
     escolhido = ResultadoBusca(
         titulo="Torto arado",

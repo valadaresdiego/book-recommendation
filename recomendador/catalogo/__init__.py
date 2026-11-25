@@ -10,7 +10,7 @@ from recomendador.catalogo.busca import Busca, buscar, buscar_no_catalogo
 from recomendador.catalogo.capas import capa, capa_reserva
 from recomendador.catalogo.fontes.google_books import GoogleBooks
 from recomendador.catalogo.fontes.open_library import OpenLibrary
-from recomendador.catalogo.generos import GeneroDoCatalogo, listar_generos
+from recomendador.catalogo.generos import SLUG_TECNOLOGIA, GeneroDoCatalogo, listar_generos
 from recomendador.catalogo.resolucao import (
     ObraRegistrada,
     informar_titulo_original,
@@ -37,6 +37,7 @@ def open_library() -> OpenLibrary:
 
 
 __all__ = [
+    "SLUG_TECNOLOGIA",
     "Busca",
     "Candidata",
     "GeneroDoCatalogo",

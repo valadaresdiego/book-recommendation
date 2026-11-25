@@ -48,3 +48,32 @@ def sobrenome(nome: str) -> str | None:
     """O último sobrenome, sem sufixos como Jr., Filho ou Neto."""
     partes = [p for p in normalizar(nome).split() if p not in _SUFIXOS]
     return partes[-1] if partes else None
+
+
+def sem_autores_repetidos(nomes: list[str]) -> list[str]:
+    """Um nome por autor, na ordem da primeira vez que aparece.
+
+    Dois nomes são o mesmo autor se têm o mesmo primeiro nome e o mesmo sobrenome
+    ("Kevin E. Kline" e "Kevin Kline"); fica a forma mais completa.
+    """
+    por_chave: dict[tuple[str, str | None], str] = {}
+    for nome in nomes:
+        partes = normalizar(nome).split()
+        if not partes:
+            continue
+        chave = (partes[0], sobrenome(nome))
+        atual = por_chave.get(chave)
+        if atual is None or len(normalizar(nome)) > len(normalizar(atual)):
+            por_chave[chave] = nome
+    return list(por_chave.values())
+
+
+# "(Em Portugues do Brasil)", "(Portuguese Edition)": o idioma que as livrarias põem no título.
+_RE_RUIDO_DO_TITULO = re.compile(r"\s*\([^()]*(portugu|brasil)[^()]*\)\s*$", re.IGNORECASE)
+
+
+def titulo_sem_ruido(titulo: str) -> str:
+    """O título sem os parênteses finais que só dizem o idioma da Edição."""
+    while (limpo := _RE_RUIDO_DO_TITULO.sub("", titulo)) != titulo and limpo:
+        titulo = limpo
+    return " ".join(titulo.split())
