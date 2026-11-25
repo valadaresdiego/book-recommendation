@@ -527,3 +527,42 @@ def test_quero_ler_com_itens_esconde_a_busca(conexao: Connection) -> None:
 
     assert not at.exception
     assert at.text_input[0].label == "Título, autor ou ISBN"
+
+
+def test_candidata_ja_em_quero_ler_avisa_com_o_titulo_dela(conexao: Connection) -> None:
+    """`registrar_resolucao` troca o título da Obra dentro da transação (Edição em
+    português, §7.2); o aviso, depois de desfeita, mostra o título que ficou."""
+    obra = criar_obra(conexao, "Torto Arado", ("Itamar Vieira Junior",), origem="leitor")
+    estante.salvar_quero_ler(conexao, LEITOR_ID, obra)
+    quadrinhos = catalogo.ResultadoBusca(
+        titulo="Torto arado: Romance em quadrinhos",
+        autores=("Rafael Calça", "Itamar Vieira Junior"),
+        ano=2026,
+        capa_url=None,
+        google_volume_id="vol-quadrinhos",
+        idioma="pt",
+    )
+    nova = catalogo.ObraProposta(
+        titulo=quadrinhos.titulo,
+        titulo_original=None,
+        titulo_exibicao=quadrinhos.titulo,
+        autores=quadrinhos.autores,
+        ano_original=2026,
+        descricao=None,
+        capa_url=None,
+        ol_work_key=None,
+    )
+    candidata = catalogo.Candidata(obra, "Torto Arado", ("Itamar Vieira Junior",), None, None)
+    at = _pagina("adicionar")
+    at.session_state["adicionar-resolucao"] = catalogo.Resolucao(
+        "nova", quadrinhos, obra_nova=nova, candidatas=(candidata,)
+    )
+    at.run()
+    at.radio(key="adicionar-candidata").set_value(obra).run()
+
+    at.button(key="adicionar-quero").click().run()
+
+    assert not at.exception
+    assert at.warning[0].value == "Torto Arado já está na sua lista Quero ler"
+    edicoes = conexao.execute(text("SELECT count(*) FROM edicao")).scalar_one()
+    assert edicoes == 0

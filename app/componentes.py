@@ -286,7 +286,7 @@ def _gravar(
             registrada = catalogo.registrar_resolucao(conn, r, escolha=escolha)
             aviso = guardar(conn, registrada)
     except (estante.JaNaEstante, estante.JaEmQueroLer) as e:
-        st.warning(str(e), icon="📚")
+        st.warning(str(_recusa_relida(e)), icon="📚")
         return
     depois_de_gravar()
     calcular_parecidos(registrada.obra_id)
@@ -294,6 +294,22 @@ def _gravar(
     estado["inicio"] = None
     st.session_state[estado.chave("salvo")] = aviso
     st.rerun()
+
+
+def _recusa_relida(
+    e: estante.JaNaEstante | estante.JaEmQueroLer,
+) -> estante.JaNaEstante | estante.JaEmQueroLer:
+    """A recusa com a Obra relida depois de desfeita a transação.
+
+    Dentro dela, `registrar_resolucao` pode ter dado à candidata o título da Edição em
+    português (§7.2), e o aviso sairia com o título da Edição recusada.
+    """
+    with estante.transacao() as conn:
+        if isinstance(e, estante.JaNaEstante):
+            item = estante.leitura_da_obra(conn, LEITOR, e.item.obra_id)
+            return estante.JaNaEstante(item) if item else e
+        item = estante.quero_ler_da_obra(conn, LEITOR, e.item.obra_id)
+        return estante.JaEmQueroLer(item) if item else e
 
 
 def _salvar(estado: _Estado, r: catalogo.Resolucao, escolha: int | None, nota: int | None) -> None:
