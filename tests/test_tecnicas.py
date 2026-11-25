@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.busca import buscar_no_catalogo
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA, sincronizar_generos
 from recomendador.catalogo.isbn import completar_isbn13
 from recomendador.config import LEITOR_ID
@@ -229,6 +230,28 @@ def test_obra_fora_do_corte_sai_se_ninguem_usa(
     assert set(_obras(conexao)) == {"/works/OL1W", "/works/OL2W", "/works/OL10W"}
     assert (r.apagadas, r.mantidas_em_uso) == (1, 1)
     assert fluent in _tecnicas(conexao)
+
+
+def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
+    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int], tmp_path: Path
+) -> None:
+    carregar_tecnicas(conexao, dumps, curados=curados)
+    fluent = _obras(conexao)["/works/OL2W"]["id"]
+    conexao.execute(
+        text("INSERT INTO quero_ler (leitor_id, obra_id) VALUES (:l, :o)"),
+        {"l": LEITOR_ID, "o": fluent},
+    )
+    sem_editoras = tmp_path / "editoras.txt"
+    sem_editoras.write_text("nenhuma editora assim\n", encoding="utf-8")
+
+    carregar_tecnicas(conexao, dumps, curados=curados, editoras=sem_editoras)
+
+    # A Obra fica "sem os dados da carga anterior mudarem" (SPEC §8.8, passo 7).
+    assert [o.obra_id for o in buscar_no_catalogo(conexao, ISBN_ALTA)] == [fluent]
+    assuntos = conexao.execute(
+        text("SELECT tag FROM obra_tag WHERE obra_id = :o"), {"o": fluent}
+    ).scalars()
+    assert list(assuntos) == ["python (computer program language)"]
 
 
 @pytest.mark.parametrize(
