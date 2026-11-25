@@ -51,6 +51,7 @@ _CATALOGO = Path(__file__).resolve().parents[1] / "catalogo"
 ARQUIVO_ASSUNTOS = _CATALOGO / "assuntos_tecnicos.yaml"
 ARQUIVO_EDITORAS = _CATALOGO / "editoras_tecnicas.txt"
 ARQUIVO_CURADOS = _CATALOGO / "tecnicos_curados.yaml"
+ARQUIVO_SEPARADAS = _CATALOGO / "tecnicas_separadas.yaml"
 
 # O corte do §8.8 (medido em 19/11/2026: ~4.250 works).
 MIN_EDICOES = 10
@@ -149,6 +150,12 @@ def ler_curados(caminho: Path = ARQUIVO_CURADOS) -> list[Curada]:
     return curadas
 
 
+def ler_separadas(caminho: Path = ARQUIVO_SEPARADAS) -> list[Curada]:
+    """As works que nunca se juntam a outra pelo título (§8.8, passo 5)."""
+    itens = yaml.safe_load(caminho.read_text(encoding="utf-8")) or []
+    return [Curada(i["work"], i["titulo"], i["autor"]) for i in itens]
+
+
 def _limpar(assunto: str) -> str:
     return " ".join(assunto.split()).lower()
 
@@ -211,26 +218,33 @@ def _work_lida(dados: dict) -> WorkLida:
 
 
 def _ler_works(
-    caminho: Path, criterio: Criterio, curadas: set[str]
+    caminho: Path, criterio: Criterio, curadas: set[str], separadas: set[str] = frozenset()
 ) -> tuple[dict[str, WorkLida], dict[str, WorkLida]]:
-    """Passada 1: (works técnicas fora do ruído, works da lista curada)."""
+    """Passada 1: (works técnicas fora do ruído, works das listas curada e de separadas).
+
+    Uma work da lista curada entra sem o critério; uma da lista de separadas só é lida para
+    a conferência e continua dependendo do critério, como as outras.
+    """
     tecnicas: dict[str, WorkLida] = {}
     da_lista: dict[str, WorkLida] = {}
+    listadas = curadas | separadas
     for linha in linhas_do_dump(caminho):
         partes = linha.split("\t", 2)
         if len(partes) < 2:
             continue
         chave = partes[1]
-        if chave not in curadas:
+        if chave not in listadas:
             inicio = linha.find('"subjects"')
             if inicio < 0 or not _RE_RADICAIS.search(linha, inicio, linha.find("]", inicio)):
                 continue
         if (dados := json_da_linha(linha)) is None or not dados.get("key"):
             continue
         w = _work_lida(dados)
-        if chave in curadas:
+        if chave in listadas:
             da_lista[chave] = w
-        elif criterio.tecnica(w.assuntos) and not criterio.ruido(w.titulo, w.assuntos):
+        if chave in curadas:
+            continue
+        if criterio.tecnica(w.assuntos) and not criterio.ruido(w.titulo, w.assuntos):
             tecnicas[chave] = w
     return tecnicas, da_lista
 
@@ -335,7 +349,9 @@ def _subtitulos_compativeis(a: str | None, b: str | None) -> bool:
 
 
 def fundir_pelo_titulo(
-    works: list[tuple[WorkLida, bool, int]], nomes: dict[str, str]
+    works: list[tuple[WorkLida, bool, int]],
+    nomes: dict[str, str],
+    separadas: set[str] = frozenset(),
 ) -> dict[str, str]:
     """Das works (work, curada, nº de Edições), as que são outra edição de uma das outras:
     {work absorvida: work que fica}.
@@ -343,10 +359,13 @@ def fundir_pelo_titulo(
     Duas works são da mesma Obra se têm o mesmo título principal, subtítulos compatíveis e
     um autor em comum, pela chave na Open Library ou pelo nome (`chave_do_autor`), porque
     ela tem vários registros para o mesmo autor. Fica a work curada e, depois, a de mais
-    Edições. Uma work curada nunca é absorvida: a lista é revisada pelo Leitor.
+    Edições. Uma work curada nunca é absorvida: a lista é revisada pelo Leitor. Uma work
+    de `separadas` não absorve nem é absorvida: é um livro diferente que a regra juntaria.
     """
     grupos: dict[str, list[tuple[WorkLida, bool, str | None]]] = {}
     for w, curada, _ in sorted(works, key=lambda x: (not x[1], -x[2], x[0].chave)):
+        if w.chave in separadas:
+            continue
         principal, subtitulo = chave_do_titulo(w.titulo)
         grupos.setdefault(principal, []).append((w, curada, subtitulo))
     absorvidas: dict[str, str] = {}
@@ -619,10 +638,12 @@ def carregar_tecnicas(
     assuntos: Path = ARQUIVO_ASSUNTOS,
     editoras: Path = ARQUIVO_EDITORAS,
     curados: Path = ARQUIVO_CURADOS,
+    separadas: Path = ARQUIVO_SEPARADAS,
 ) -> ResumoTecnicas:
     criterio = ler_criterio(assuntos)
     re_editoras = ler_editoras(editoras)
     curadas = ler_curados(curados)
+    lista_separadas = ler_separadas(separadas)
     genero_id = conn.execute(
         text("SELECT id FROM genero WHERE slug = :s"), {"s": SLUG_TECNOLOGIA}
     ).scalar_one_or_none()
@@ -635,8 +656,9 @@ def carregar_tecnicas(
     principais = {c.work for c in curadas}
     duplicadas = {f for c in curadas for f in c.fundir}
     log.info("Passada 1/3 (%s): works técnicas e da lista curada", works_dump.name)
-    tecnicas, da_lista = _ler_works(works_dump, criterio, principais | duplicadas)
-    for c in curadas:
+    nao_juntar = {s.work for s in lista_separadas}
+    tecnicas, da_lista = _ler_works(works_dump, criterio, principais | duplicadas, nao_juntar)
+    for c in (*curadas, *lista_separadas):
         _conferir_curada(c, da_lista)
     log.info("  %d works técnicas fora do ruído; %d da lista curada", len(tecnicas), len(curadas))
 
@@ -698,6 +720,7 @@ def carregar_tecnicas(
     absorvidas = fundir_pelo_titulo(
         [(w, c, edicoes.get(k, EdicoesDaWork()).quantas) for k, (w, c, _) in escolhidas.items()],
         nomes,
+        nao_juntar,
     )
     for chave, fica in absorvidas.items():
         escolhidas[fica][2].append(chave)

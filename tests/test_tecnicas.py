@@ -140,6 +140,14 @@ def curados(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def separadas(tmp_path: Path) -> Path:
+    """Vazia: a lista do projeto tem works que não estão nos dumps sintéticos."""
+    caminho = tmp_path / "separadas.yaml"
+    caminho.write_text("", encoding="utf-8")
+    return caminho
+
+
+@pytest.fixture
 def catalogo(conexao: Connection) -> dict[str, int]:
     sincronizar_generos(conexao)
     return {
@@ -170,9 +178,9 @@ def _tecnicas(conexao: Connection) -> set[int]:
 
 
 def test_corte_lista_curada_e_obras_que_ja_existem(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+    conexao: Connection, dumps: Path, curados: Path, separadas: Path, catalogo: dict[str, int]
 ) -> None:
-    r = carregar_tecnicas(conexao, dumps, curados=curados)
+    r = carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
 
     obras = _obras(conexao)
     assert set(obras) == {"/works/OL1W", "/works/OL2W", "/works/OL3W", "/works/OL10W"}
@@ -215,14 +223,14 @@ def test_corte_lista_curada_e_obras_que_ja_existem(
 
 
 def test_obra_do_leitor_e_tecnica_pelo_assunto_mesmo_fora_do_corte(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+    conexao: Connection, dumps: Path, curados: Path, separadas: Path, catalogo: dict[str, int]
 ) -> None:
     """§8.8, passo 7: o corte escolhe candidatas a Sugestão; a Obra que o Leitor já tem
     vira técnica pelo assunto. A work de ficção (ruído) continua de fora."""
     antigo = criar_obra(conexao, "Antigo", ol_work_key="/works/OL5W", origem="leitor")
     robos = criar_obra(conexao, "Robos", ol_work_key="/works/OL7W", origem="leitor")
 
-    r = carregar_tecnicas(conexao, dumps, curados=curados)
+    r = carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
 
     assert antigo in _tecnicas(conexao)
     assert robos not in _tecnicas(conexao)
@@ -231,7 +239,7 @@ def test_obra_do_leitor_e_tecnica_pelo_assunto_mesmo_fora_do_corte(
 
 
 def test_obra_do_leitor_de_biografias_nao_vira_tecnica(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+    conexao: Connection, dumps: Path, curados: Path, separadas: Path, catalogo: dict[str, int]
 ) -> None:
     """A mesma regra do `mapear-generos` (§6.3): Biografias e memórias sai de Tecnologia.
     Sem ela, a ordem dos comandos decidiria o Gênero da Obra."""
@@ -243,7 +251,7 @@ def test_obra_do_leitor_de_biografias_nao_vira_tecnica(
         {"o": catalogo["leitor"], "s": SLUG_BIOGRAFIAS},
     )
 
-    r = carregar_tecnicas(conexao, dumps, curados=curados)
+    r = carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
 
     assert catalogo["leitor"] not in _tecnicas(conexao)
     assert r.do_leitor == 0
@@ -259,21 +267,26 @@ def test_inteligencia_artificial_sozinha_nao_faz_obra_tecnica() -> None:
 
 
 def test_carga_e_idempotente(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+    conexao: Connection, dumps: Path, curados: Path, separadas: Path, catalogo: dict[str, int]
 ) -> None:
-    carregar_tecnicas(conexao, dumps, curados=curados)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
     ids = {k: o["id"] for k, o in _obras(conexao).items()}
 
-    r = carregar_tecnicas(conexao, dumps, curados=curados)
+    r = carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
 
     assert {k: o["id"] for k, o in _obras(conexao).items()} == ids
     assert (r.novas, r.apagadas) == (0, 0)
 
 
 def test_obra_fora_do_corte_sai_se_ninguem_usa(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int], tmp_path: Path
+    conexao: Connection,
+    dumps: Path,
+    curados: Path,
+    separadas: Path,
+    catalogo: dict[str, int],
+    tmp_path: Path,
 ) -> None:
-    carregar_tecnicas(conexao, dumps, curados=curados)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
     fluent = _obras(conexao)["/works/OL2W"]["id"]
     conexao.execute(
         text("INSERT INTO quero_ler (leitor_id, obra_id) VALUES (:l, :o)"),
@@ -282,7 +295,9 @@ def test_obra_fora_do_corte_sai_se_ninguem_usa(
     sem_editoras = tmp_path / "editoras.txt"
     sem_editoras.write_text("nenhuma editora assim\n", encoding="utf-8")
 
-    r = carregar_tecnicas(conexao, dumps, curados=curados, editoras=sem_editoras)
+    r = carregar_tecnicas(
+        conexao, dumps, curados=curados, separadas=separadas, editoras=sem_editoras
+    )
 
     # Fluent Thing e Lançamento saem do corte: a primeira está em Quero ler e fica.
     assert set(_obras(conexao)) == {"/works/OL1W", "/works/OL2W", "/works/OL10W"}
@@ -291,9 +306,14 @@ def test_obra_fora_do_corte_sai_se_ninguem_usa(
 
 
 def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int], tmp_path: Path
+    conexao: Connection,
+    dumps: Path,
+    curados: Path,
+    separadas: Path,
+    catalogo: dict[str, int],
+    tmp_path: Path,
 ) -> None:
-    carregar_tecnicas(conexao, dumps, curados=curados)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
     fluent = _obras(conexao)["/works/OL2W"]["id"]
     conexao.execute(
         text("INSERT INTO quero_ler (leitor_id, obra_id) VALUES (:l, :o)"),
@@ -302,7 +322,7 @@ def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
     sem_editoras = tmp_path / "editoras.txt"
     sem_editoras.write_text("nenhuma editora assim\n", encoding="utf-8")
 
-    carregar_tecnicas(conexao, dumps, curados=curados, editoras=sem_editoras)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas, editoras=sem_editoras)
 
     # A Obra fica "sem os dados da carga anterior mudarem" (SPEC §8.8, passo 8).
     assert [o.obra_id for o in buscar_no_catalogo(conexao, ISBN_ALTA)] == [fluent]
@@ -329,13 +349,13 @@ def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
     ],
 )
 def test_lista_curada_invalida(
-    conexao: Connection, dumps: Path, tmp_path: Path, item: str, mensagem: str
+    conexao: Connection, dumps: Path, separadas: Path, tmp_path: Path, item: str, mensagem: str
 ) -> None:
     sincronizar_generos(conexao)
     caminho = tmp_path / "ruim.yaml"
     caminho.write_text(item, encoding="utf-8")
     with pytest.raises(CuradaInvalida, match=mensagem):
-        carregar_tecnicas(conexao, dumps, curados=caminho)
+        carregar_tecnicas(conexao, dumps, curados=caminho, separadas=separadas)
 
 
 def test_lista_curada_do_projeto_e_valida() -> None:
@@ -352,7 +372,14 @@ _PACKT = {"editora": "Packt Publishing", "ano": "2019"}
 ISBN_SEGUNDA = completar_isbn13("978178439277")  # da work da 2ª edição
 
 
-def _carregar_so(conexao: Connection, tmp_path: Path, works: list, edicoes: list, curados=""):
+def _carregar_so(
+    conexao: Connection,
+    tmp_path: Path,
+    works: list,
+    edicoes: list,
+    curados: str = "",
+    separadas: str = "",
+):
     pasta = tmp_path / "ol"
     pasta.mkdir(parents=True)
     _dump(pasta / "ol_dump_works_2026-10-31.txt.gz", "work", [(w["key"], w) for w in works])
@@ -377,8 +404,10 @@ def _carregar_so(conexao: Connection, tmp_path: Path, works: list, edicoes: list
     )
     lista = tmp_path / "curados.yaml"
     lista.write_text(curados, encoding="utf-8")
+    lista_separadas = tmp_path / "separadas.yaml"
+    lista_separadas.write_text(separadas, encoding="utf-8")
     sincronizar_generos(conexao)
-    return carregar_tecnicas(conexao, pasta, curados=lista)
+    return carregar_tecnicas(conexao, pasta, curados=lista, separadas=lista_separadas)
 
 
 def test_edicoes_da_mesma_obra_viram_uma_obra(conexao: Connection, tmp_path: Path) -> None:
@@ -490,6 +519,69 @@ def test_work_da_lista_curada_absorve_a_duplicada_do_corte(
     assert r.fundidas == 1
 
 
+def _angularjs() -> tuple[list, list]:
+    """*AngularJS* (2013) e *AngularJS: Up and Running* (2015): livros diferentes dos mesmos
+    autores, que a regra do título juntaria porque um deles não tem subtítulo."""
+    works = [
+        _work("/works/OL60W", "AngularJS", TECNICO, autor="/authors/OL6A"),
+        _work(
+            "/works/OL61W",
+            "AngularJS",
+            TECNICO,
+            autor="/authors/OL6A",
+            subtitle="Up and Running",
+        ),
+    ]
+    return works, [e for w in works for e in _edicoes(w["key"], 3, **_PACKT)]
+
+
+def test_work_da_lista_de_separadas_nao_se_junta_pelo_titulo(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    works, edicoes = _angularjs()
+    separadas = "- work: /works/OL60W\n  titulo: AngularJS\n  autor: Tom Mitchell\n"
+
+    r = _carregar_so(conexao, tmp_path, works, edicoes, separadas=separadas)
+
+    obras = _obras(conexao)
+    assert set(obras) == {"/works/OL60W", "/works/OL61W"}
+    assert not any(o["curada"] for o in obras.values())  # não passa na frente na Montagem
+    assert r.fundidas == 0
+
+
+def test_sem_a_lista_de_separadas_as_duas_viram_uma(conexao: Connection, tmp_path: Path) -> None:
+    works, edicoes = _angularjs()
+
+    r = _carregar_so(conexao, tmp_path, works, edicoes)
+
+    assert len(_obras(conexao)) == 1
+    assert r.fundidas == 1
+
+
+@pytest.mark.parametrize(
+    ("item", "mensagem"),
+    [
+        ("- {work: /works/OL99W, titulo: Sumida, autor: X}", "não está no dump"),
+        ("- {work: /works/OL60W, titulo: Outro Livro, autor: X}", "não começa por"),
+    ],
+)
+def test_lista_de_separadas_invalida(
+    conexao: Connection, tmp_path: Path, item: str, mensagem: str
+) -> None:
+    works, edicoes = _angularjs()
+    with pytest.raises(CuradaInvalida, match=mensagem):
+        _carregar_so(conexao, tmp_path, works, edicoes, separadas=item)
+
+
+def test_lista_de_separadas_do_projeto_e_valida() -> None:
+    from recomendador.pipeline.tecnicas import ler_curados, ler_separadas
+
+    separadas = ler_separadas()
+    assert any(s.work == "/works/OL19548384W" for s in separadas)  # AngularJS (2013)
+    assert all(s.work.startswith("/works/OL") and s.titulo and s.autor for s in separadas)
+    assert not {s.work for s in separadas} & {c.work for c in ler_curados()}
+
+
 def test_c_e_cpp_sao_obras_diferentes(conexao: Connection, tmp_path: Path) -> None:
     works = [
         _work("/works/OL50W", "C How to Program", TECNICO, autor="/authors/OL6A"),
@@ -541,11 +633,11 @@ def test_duplicada_presa_por_evento_deixa_de_ser_tecnica(
 
 
 def test_titulo_da_edicao_do_leitor_continua_depois_da_carga(
-    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+    conexao: Connection, dumps: Path, curados: Path, separadas: Path, catalogo: dict[str, int]
 ) -> None:
     """A Edição brasileira que o Leitor gravou deu o título à Obra (§7.2). Sem Edição em
     português no dump, a carga seguinte não volta ao título em inglês."""
-    carregar_tecnicas(conexao, dumps, curados=curados)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
     big = _obras(conexao)["/works/OL1W"]["id"]
     conexao.execute(
         text(
@@ -558,7 +650,7 @@ def test_titulo_da_edicao_do_leitor_continua_depois_da_carga(
         text("UPDATE obra SET titulo_exibicao = 'Livrão: do código' WHERE id = :o"), {"o": big}
     )
 
-    carregar_tecnicas(conexao, dumps, curados=curados)
+    carregar_tecnicas(conexao, dumps, curados=curados, separadas=separadas)
 
     obras = _obras(conexao)
     assert obras["/works/OL1W"]["titulo_exibicao"] == "Livrão: do código"
