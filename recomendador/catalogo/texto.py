@@ -50,6 +50,12 @@ def sobrenome(nome: str) -> str | None:
     return partes[-1] if partes else None
 
 
+def chave_do_autor(nome: str) -> tuple[str, str | None] | None:
+    """(primeiro nome, sobrenome): "Kevin E. Kline" e "Kevin Kline" dão a mesma chave."""
+    partes = normalizar(nome).split()
+    return (partes[0], sobrenome(nome)) if partes else None
+
+
 def sem_autores_repetidos(nomes: list[str]) -> list[str]:
     """Um nome por autor, na ordem da primeira vez que aparece.
 
@@ -58,10 +64,8 @@ def sem_autores_repetidos(nomes: list[str]) -> list[str]:
     """
     por_chave: dict[tuple[str, str | None], str] = {}
     for nome in nomes:
-        partes = normalizar(nome).split()
-        if not partes:
+        if (chave := chave_do_autor(nome)) is None:
             continue
-        chave = (partes[0], sobrenome(nome))
         atual = por_chave.get(chave)
         if atual is None or len(normalizar(nome)) > len(normalizar(atual)):
             por_chave[chave] = nome

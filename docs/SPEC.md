@@ -272,7 +272,7 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
 `obra_genero.forca` = soma das `contagem` das tags do Gênero na Obra ÷ soma de todas as `contagem` úteis da Obra. Uma Obra pertence ao Gênero se `forca ≥ 0,05`.
 
 - **Tecnologia** usa só tags estritas. `technology` e `tech` ficam de fora, porque marcam livros *sobre* tecnologia (*Steve Jobs*). Uma Obra que também é de "Biografias e memórias" sai de Tecnologia (*Ghost in the Wires*). Com essas regras, entram 4 Obras da Base: *The Pragmatic Programmer*, *Don't Make Me Think*, *The Phoenix Project* e *The Design of Everyday Things*.
-- As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`, e também as do Leitor cuja work é técnica (§8.8, passo 6). Os assuntos da Open Library têm `contagem = 0` e não refariam essa linha, então o `mapear-generos` preserva a Tecnologia de toda Obra que não é da Base. A regra de Biografias e memórias vale para todas.
+- As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`, e também as do Leitor cuja work é técnica (§8.8, passo 7). Os assuntos da Open Library têm `contagem = 0` e não refariam essa linha, então o `mapear-generos` preserva a Tecnologia de toda Obra que não é da Base. A regra de Biografias e memórias vale para todas.
 
 ---
 
@@ -540,27 +540,33 @@ Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-libr
 4. **Lista curada** (`catalogo/tecnicos_curados.yaml`, revisada pelo Leitor). Cada item tem:
    - `work`, a chave da OL;
    - `titulo` e `autor`, para conferência;
-   - opcionalmente, `fundir`: as works duplicadas da mesma Obra (*Refactoring* tem 7 no dump). Os ISBNs delas entram na Obra.
+   - opcionalmente, `fundir`: as works duplicadas da mesma Obra (*Refactoring* tem 7 no dump). As Edições delas entram na Obra.
 
    A carga falha com mensagem clara se uma chave (de `work` ou de `fundir`) não existir no dump ou se o título da `work` não bater com o da lista. Os itens da lista entram com `curada = true`, mesmo fora do corte e mesmo sem assunto técnico (*SICP*).
-5. **Obra.** Cada work selecionada vira uma Obra com `origem='open_library'`:
+5. **Works duplicadas.** A Open Library tem uma work por edição de muitos livros técnicos (*Building Machine Learning Systems with Python* tinha 3 Obras, uma por edição). Entre as works selecionadas, viram uma Obra só as que têm (`pipeline.tecnicas.fundir_pelo_titulo`):
+   - o mesmo título principal (antes do primeiro ":"), normalizado e sem a marca de edição ("Second Edition", "3rd edition", "Global Edition", "Revised and Updated Edition"). "C", "C++" e "C#" continuam diferentes;
+   - subtítulos iguais, ou um deles vazio. A work sem subtítulo fica com o da primeira que absorve, e uma terceira com outro subtítulo é outro livro (*Starting Out with C++: Early Objects* e *From Control Structures through Objects*);
+   - um autor em comum, pela chave da Open Library ou pelo primeiro nome e sobrenome.
+
+   Num volume ou parte ("Volume 2", "Parts 6-8"), vale o título inteiro: só se junta ao mesmo volume. Fica a work curada e, depois, a de mais Edições. Uma work curada nunca é absorvida. A Obra que fica junta as Edições de todas: `edicoes_ol` é a soma, e os ISBNs e a Edição em português valem para ela. Em 25/11/2026, a regra juntou ~120 das ~4.170 works (decisão do Leitor; antes, só o `fundir` da lista).
+6. **Obra.** Cada work selecionada vira uma Obra com `origem='open_library'`:
    - `titulo` = título da work (com o subtítulo, se houver);
    - `autores` = nomes do dump de `authors`, na ordem da work, um por autor: nomes com o mesmo primeiro nome e o mesmo sobrenome são o mesmo autor, e fica a forma mais completa ("Kevin E. Kline" e "Kevin Kline"; a Open Library tem vários registros para a mesma pessoa);
    - `ano_original` = `first_publish_date` ou, na falta, o menor ano das Edições;
    - `descricao`, `ol_work_key`, `popularidade = 0` e `edicoes_ol`;
    - `capa_url` pelo id de capa da work (`covers.openlibrary.org/b/id/{id}-M.jpg`). O acesso por id não tem o limite de 100 req/5 min do acesso por ISBN;
-   - `titulo_exibicao` e `tem_edicao_pt` pelas regras do §6.2, com o subtítulo da Edição em português, como no `titulo` (sem ele, *The C Programming Language* aparecia como "C");
+   - `titulo_exibicao` e `tem_edicao_pt` pelas regras do §6.2, com o subtítulo da Edição em português, como no `titulo` (sem ele, *The C Programming Language* aparecia como "C"). Uma Edição em português gravada pelo Leitor (§7.2) continua valendo a cada carga: dá o `tem_edicao_pt` e, se o dump não tem Edição em português, o título (*Mãos à Obra*, *Engenharia de IA*);
    - todos os ISBNs vão para `obra_isbn` com `origem='open_library'`. Um ISBN que já está em outra Obra fica com ela;
    - os assuntos vão para `obra_tag` com `contagem = 0`;
    - uma linha em `obra_genero` para Tecnologia, com `forca = 1`.
 
    Assim, uma Edição técnica achada na busca (§7.1) cai direto na Obra pelo passo 1 do §7.2.
-6. **Obras que já existem.** Uma work já ligada a uma Obra (`ol_work_key`) não vira Obra nova:
+7. **Obras que já existem.** Uma work já ligada a uma Obra (`ol_work_key`) não vira Obra nova:
    - se a Obra é do Leitor (`origem='leitor'`), ela ganha Tecnologia com `forca = 1` quando a work é técnica pelo passo 1, mesmo fora do corte: o corte só escolhe candidatas novas. A work no ruído (ficção, anais) e a Obra de Biografias e memórias (§6.3) ficam de fora;
    - se é da Base, fica como está. O Gênero dela vem só das tags.
-7. **Idempotência.** O upsert é por `ol_work_key`. Uma Obra `origem='open_library'` que sai do corte numa carga nova é apagada se não tiver Leitura, lista (Quero ler, Estou lendo, Dispensa), Edição nem evento. Se tiver, fica.
-8. **`enriquecer-ol` depois.** As works das Obras `open_library` contam como ocupadas, como as do Leitor: nenhuma Obra da Base fica com elas. Os ISBNs `origem='open_library'` dessas Obras são do `carregar-tecnicas`, e o `enriquecer-ol` só refaz os das outras Obras.
-9. **Log.** Registra:
+8. **Idempotência.** O upsert é por `ol_work_key`. Uma Obra `origem='open_library'` que sai do corte numa carga nova, ou cuja work foi absorvida (passo 5), é apagada se não tiver Leitura, lista (Quero ler, Estou lendo, Dispensa), Edição nem evento. Se tiver, fica, e continua em Tecnologia só se tiver Leitura, Quero ler ou Estou lendo. Presa só por evento, Dispensa ou Edição, ela sai de Tecnologia e deixa de ser candidata na aba: senão a cópia absorvida continuaria sugerida ao lado da Obra que a absorveu.
+9. **`enriquecer-ol` depois.** As works das Obras `open_library` contam como ocupadas, como as do Leitor: nenhuma Obra da Base fica com elas. Os ISBNs `origem='open_library'` dessas Obras são do `carregar-tecnicas`, e o `enriquecer-ol` só refaz os das outras Obras.
+10. **Log.** Registra:
    - quantas works entraram por cada ramo do corte e pela lista;
    - quantas têm descrição;
    - quantas têm Edição em português;
@@ -723,5 +729,5 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | Viés de popularidade do goodbooks-10k (só livros populares) | Sugestões óbvias | Cobertura medida no §9.3; limite por autor; Base maior no P2 |
 | Docker Desktop não abre ou demora | App não abre | `iniciar.ps1` abre o Docker Desktop, espera até 120 s e mostra o erro com o caminho do log |
 | Dumps da OL grandes (~12 GB) | Primeira carga lenta | Streaming; processamento único; a carga roda bem uma vez e não precisa ser rápida |
-| Metadados técnicos pobres na OL (~88 % sem descrição, works duplicadas, livros datados) | Sugestões técnicas fracas ou obsoletas | Corte por editora técnica e ano; lista curada com `fundir`; Dispensa; a qualidade é julgada pelo Leitor no uso (ADR 0009) |
+| Metadados técnicos pobres na OL (~88 % sem descrição, works duplicadas, livros datados) | Sugestões técnicas fracas ou obsoletas | Corte por editora técnica e ano; lista curada com `fundir`; junção das works de mesmo título e autor (§8.8, passo 5); Dispensa; a qualidade é julgada pelo Leitor no uso (ADR 0009) |
 | VRAM de 12 GB | Modelo de embedding grande não cabe | Os finalistas já são filtrados por VRAM (§8.4.1); fp16; batches pequenos |

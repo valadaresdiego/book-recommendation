@@ -217,7 +217,7 @@ def test_corte_lista_curada_e_obras_que_ja_existem(
 def test_obra_do_leitor_e_tecnica_pelo_assunto_mesmo_fora_do_corte(
     conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
 ) -> None:
-    """§8.8, passo 6: o corte escolhe candidatas a Sugestão; a Obra que o Leitor já tem
+    """§8.8, passo 7: o corte escolhe candidatas a Sugestão; a Obra que o Leitor já tem
     vira técnica pelo assunto. A work de ficção (ruído) continua de fora."""
     antigo = criar_obra(conexao, "Antigo", ol_work_key="/works/OL5W", origem="leitor")
     robos = criar_obra(conexao, "Robos", ol_work_key="/works/OL7W", origem="leitor")
@@ -304,7 +304,7 @@ def test_obra_mantida_fora_do_corte_continua_com_isbns_e_assuntos(
 
     carregar_tecnicas(conexao, dumps, curados=curados, editoras=sem_editoras)
 
-    # A Obra fica "sem os dados da carga anterior mudarem" (SPEC §8.8, passo 7).
+    # A Obra fica "sem os dados da carga anterior mudarem" (SPEC §8.8, passo 8).
     assert [o.obra_id for o in buscar_no_catalogo(conexao, ISBN_ALTA)] == [fluent]
     assuntos = conexao.execute(
         text("SELECT tag FROM obra_tag WHERE obra_id = :o"), {"o": fluent}
@@ -344,3 +344,224 @@ def test_lista_curada_do_projeto_e_valida() -> None:
     curadas = ler_curados()
     assert len(curadas) >= 60
     assert all(c.work.startswith("/works/OL") and c.titulo and c.autor for c in curadas)
+
+
+# --- Works duplicadas da mesma Obra, juntadas pelo título e pelo autor ---
+
+_PACKT = {"editora": "Packt Publishing", "ano": "2019"}
+ISBN_SEGUNDA = completar_isbn13("978178439277")  # da work da 2ª edição
+
+
+def _carregar_so(conexao: Connection, tmp_path: Path, works: list, edicoes: list, curados=""):
+    pasta = tmp_path / "ol"
+    pasta.mkdir(parents=True)
+    _dump(pasta / "ol_dump_works_2026-10-31.txt.gz", "work", [(w["key"], w) for w in works])
+    _dump(
+        pasta / "ol_dump_editions_2026-10-31.txt.gz",
+        "edition",
+        [(f"/books/OL{i}M", e) for i, e in enumerate(edicoes, 1)],
+    )
+    nomes = {
+        "/authors/OL1A": "Willi Richert",
+        "/authors/OL2A": "Luis Pedro Coelho",
+        "/authors/OL3A": "Matthieu Brucher",
+        "/authors/OL4A": "Luis P. Coelho",  # outro registro do mesmo autor
+        "/authors/OL5A": "Ethem Alpaydin",
+        "/authors/OL6A": "Tom Mitchell",
+        "/authors/OL7A": "Martin Fowler",
+    }
+    _dump(
+        pasta / "ol_dump_authors_2026-10-31.txt.gz",
+        "author",
+        [(k, {"key": k, "name": n}) for k, n in nomes.items()],
+    )
+    lista = tmp_path / "curados.yaml"
+    lista.write_text(curados, encoding="utf-8")
+    sincronizar_generos(conexao)
+    return carregar_tecnicas(conexao, pasta, curados=lista)
+
+
+def test_edicoes_da_mesma_obra_viram_uma_obra(conexao: Connection, tmp_path: Path) -> None:
+    """Na Open Library, cada edição de *Building Machine Learning Systems with Python* é
+    uma work. Mesmo título, sem a marca de edição, e um autor em comum: uma Obra só, a da
+    work de mais Edições, com as Edições e os ISBNs de todas."""
+    works = [
+        _work(
+            "/works/OL20W",
+            "Building Machine Learning Systems with Python",
+            TECNICO,
+            autor=("/authors/OL1A", "/authors/OL2A"),
+        ),
+        _work(
+            "/works/OL21W",
+            "Building Machine Learning Systems with Python",
+            TECNICO,
+            autor=("/authors/OL2A", "/authors/OL1A", "/authors/OL3A"),
+            subtitle="Explore machine learning and deep learning techniques, 3rd Edition",
+        ),
+        _work(
+            "/works/OL22W",
+            "Building Machine Learning Systems with Python - Second Edition",
+            TECNICO,
+            autor="/authors/OL4A",
+        ),
+    ]
+    edicoes = (
+        _edicoes("/works/OL20W", 3, **_PACKT)
+        + _edicoes("/works/OL21W", 1, **_PACKT)
+        + _edicoes("/works/OL22W", 2, isbn_13=[ISBN_SEGUNDA], **_PACKT)
+    )
+
+    r = _carregar_so(conexao, tmp_path, works, edicoes)
+
+    obras = _obras(conexao)
+    assert set(obras) == {"/works/OL20W"}
+    assert obras["/works/OL20W"]["edicoes_ol"] == 6
+    assert r.fundidas == 2
+    isbn = conexao.execute(
+        text("SELECT obra_id FROM obra_isbn WHERE isbn13 = :i"), {"i": ISBN_SEGUNDA}
+    ).scalar_one()
+    assert isbn == obras["/works/OL20W"]["id"]
+
+
+def test_obras_diferentes_de_mesmo_titulo_continuam_separadas(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    works = [
+        # Mesmo título, autores diferentes.
+        _work("/works/OL30W", "Machine Learning", TECNICO, autor="/authors/OL5A"),
+        _work("/works/OL31W", "Machine Learning", TECNICO, autor="/authors/OL6A"),
+        # Volumes da mesma série.
+        _work(
+            "/works/OL32W",
+            "Deep Belief Nets: Volume 1: Restricted Boltzmann Machines",
+            TECNICO,
+            autor="/authors/OL5A",
+        ),
+        _work(
+            "/works/OL33W",
+            "Deep Belief Nets",
+            TECNICO,
+            autor="/authors/OL5A",
+            subtitle="Volume 2: Autoencoding",
+        ),
+        # Subtítulos diferentes: livros diferentes do mesmo autor.
+        _work(
+            "/works/OL34W", "Starting Out", TECNICO, autor="/authors/OL6A", subtitle="Early Objects"
+        ),
+        _work(
+            "/works/OL35W",
+            "Starting Out",
+            TECNICO,
+            autor="/authors/OL6A",
+            subtitle="From Control Structures through Objects",
+        ),
+    ]
+    edicoes = [e for w in works for e in _edicoes(w["key"], 2, **_PACKT)]
+
+    r = _carregar_so(conexao, tmp_path, works, edicoes)
+
+    assert set(_obras(conexao)) == {w["key"] for w in works}
+    assert r.fundidas == 0
+
+
+def test_work_da_lista_curada_absorve_a_duplicada_do_corte(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    """A work curada fica, mesmo com menos Edições; a do corte vira só Edições dela."""
+    works = [
+        _work("/works/OL40W", "Refactoring", ["Object oriented"], autor="/authors/OL7A"),
+        _work(
+            "/works/OL41W",
+            "Refactoring",
+            TECNICO,
+            autor="/authors/OL7A",
+            subtitle="Improving the Design of Existing Code, 2nd edition",
+        ),
+    ]
+    edicoes = _edicoes("/works/OL40W", 1, **_PACKT) + _edicoes("/works/OL41W", 12)
+    curados = "- work: /works/OL40W\n  titulo: Refactoring\n  autor: Martin Fowler\n"
+
+    r = _carregar_so(conexao, tmp_path, works, edicoes, curados)
+
+    obras = _obras(conexao)
+    assert set(obras) == {"/works/OL40W"}
+    assert (obras["/works/OL40W"]["edicoes_ol"], obras["/works/OL40W"]["curada"]) == (13, True)
+    assert r.fundidas == 1
+
+
+def test_c_e_cpp_sao_obras_diferentes(conexao: Connection, tmp_path: Path) -> None:
+    works = [
+        _work("/works/OL50W", "C How to Program", TECNICO, autor="/authors/OL6A"),
+        _work("/works/OL51W", "C++ How to Program", TECNICO, autor="/authors/OL6A"),
+        _work("/works/OL52W", "C# How to Program", TECNICO, autor="/authors/OL6A"),
+    ]
+    edicoes = [e for w in works for e in _edicoes(w["key"], 2, **_PACKT)]
+
+    _carregar_so(conexao, tmp_path, works, edicoes)
+
+    assert set(_obras(conexao)) == {w["key"] for w in works}
+
+
+def test_duplicada_presa_por_evento_deixa_de_ser_tecnica(
+    conexao: Connection, tmp_path: Path
+) -> None:
+    """A Obra da work absorvida fica no banco se um evento aponta para ela, mas sai da
+    Tecnologia: senão continuaria sugerida ao lado da Obra que a absorveu."""
+    segunda = _work(
+        "/works/OL61W",
+        "Building Machine Learning Systems with Python - Second Edition",
+        TECNICO,
+        autor="/authors/OL2A",
+    )
+    primeira = _work(
+        "/works/OL60W",
+        "Building Machine Learning Systems with Python",
+        TECNICO,
+        autor="/authors/OL2A",
+    )
+    _carregar_so(conexao, tmp_path / "1", [segunda], _edicoes("/works/OL61W", 2, **_PACKT))
+    obra = _obras(conexao)["/works/OL61W"]["id"]
+    conexao.execute(
+        text("INSERT INTO evento (leitor_id, tipo, obra_id) VALUES (:l, 'sugestao_exibida', :o)"),
+        {"l": LEITOR_ID, "o": obra},
+    )
+
+    r = _carregar_so(
+        conexao,
+        tmp_path / "2",
+        [primeira, segunda],
+        _edicoes("/works/OL60W", 3, **_PACKT) + _edicoes("/works/OL61W", 2, **_PACKT),
+    )
+
+    assert set(_obras(conexao)) == {"/works/OL60W", "/works/OL61W"}
+    assert r.mantidas_em_uso == 1
+    assert obra not in _tecnicas(conexao)
+    assert _obras(conexao)["/works/OL60W"]["id"] in _tecnicas(conexao)
+
+
+def test_titulo_da_edicao_do_leitor_continua_depois_da_carga(
+    conexao: Connection, dumps: Path, curados: Path, catalogo: dict[str, int]
+) -> None:
+    """A Edição brasileira que o Leitor gravou deu o título à Obra (§7.2). Sem Edição em
+    português no dump, a carga seguinte não volta ao título em inglês."""
+    carregar_tecnicas(conexao, dumps, curados=curados)
+    big = _obras(conexao)["/works/OL1W"]["id"]
+    conexao.execute(
+        text(
+            "INSERT INTO edicao (obra_id, titulo, idioma) "
+            "VALUES (:o, 'Livrão: do código (Em Portugues do Brasil)', 'pt')"
+        ),
+        {"o": big},
+    )
+    conexao.execute(
+        text("UPDATE obra SET titulo_exibicao = 'Livrão: do código' WHERE id = :o"), {"o": big}
+    )
+
+    carregar_tecnicas(conexao, dumps, curados=curados)
+
+    obras = _obras(conexao)
+    assert obras["/works/OL1W"]["titulo_exibicao"] == "Livrão: do código"
+    assert obras["/works/OL1W"]["tem_edicao_pt"] is True
+    # A do dump continua valendo onde existe.
+    assert obras["/works/OL2W"]["titulo_exibicao"] == "Fluente: programando com estilo"

@@ -44,3 +44,7 @@ Contar só Edições (≥ 5) foi rejeitado: tirava os lançamentos (*AI Engineer
 Com 19 Leituras com Nota, 4 técnicas, o topo da aba eram livros de divulgação (*The Design of Everyday Things*, *The Phoenix Project*) com Motivos como *Thinking, Fast and Slow* e *A Arte da Guerra*. As 15 Leituras de negócios e psicologia convergem para os mesmos poucos livros técnicos e somam mais que as 4 técnicas, embora estas sejam bem mais parecidas com as Obras técnicas (similaridade média 0,69 contra 0,45).
 
 Decisão do Leitor: na aba, só as Leituras técnicas (do Gênero Tecnologia) são Contribuintes, desde que uma delas tenha Nota ≥ 4. Sem isso, contam todas as Leituras com Nota, como antes, para valer o critério do R14 (3 Notas, nenhuma técnica, ≥ 10 Sugestões). A lista geral não muda.
+
+## Atualização (25/11/2026): works duplicadas juntadas pelo título
+
+A Open Library tem uma work por edição de muitos livros técnicos, e a aba mostrava a mesma Obra mais de uma vez (*Building Machine Learning Systems with Python* aparecia 3 vezes no top 4). O `fundir` da lista curada só cobria os casos revisados à mão. Decisão do Leitor: o `carregar-tecnicas` junta sozinho as works de mesmo título, sem a marca de edição, com subtítulos compatíveis e um autor em comum (SPEC §8.8, passo 5). A regra juntou ~120 das ~4.170 works. Os volumes de uma série e as linguagens C, C++ e C# continuam separados. Ela ainda pode juntar dois livros diferentes de mesmo título e autor quando a Open Library não tem o subtítulo de um deles.
