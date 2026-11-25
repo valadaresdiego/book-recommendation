@@ -20,7 +20,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.fontes.open_library import assuntos as assuntos_ol
 from recomendador.catalogo.fontes.open_library import texto_descricao
 from recomendador.catalogo.isbn import normalizar_isbn
-from recomendador.catalogo.texto import normalizar, palavras_da_busca
+from recomendador.catalogo.texto import normalizar, palavras_da_busca, titulo_sem_ruido
 
 log = logging.getLogger(__name__)
 
@@ -372,6 +372,11 @@ class _EdicoesDaWork:
     em_portugues: bool = False  # alguma Edição em português, com título ou sem
 
 
+def titulo_pt_da_edicao(dados: dict) -> str:
+    """O título de exibição que uma Edição em português dá à Obra (SPEC §6.2)."""
+    return titulo_sem_ruido(str(dados.get("title") or ""))
+
+
 def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWork]:
     """Passada 3: por work, quantas Edições, todos os ISBNs, se há Edição em português e
     o título pt mais recente."""
@@ -385,7 +390,7 @@ def _coletar_edicoes(editions: Path, works: Set[str]) -> dict[str, _EdicoesDaWor
         e.isbns |= isbns_da_edicao(dados)
         portugues = em_portugues(dados)
         e.em_portugues |= portugues > 0
-        titulo = (dados.get("title") or "").strip()
+        titulo = titulo_pt_da_edicao(dados)
         if titulo and portugues:
             candidato = (portugues, _ano(dados.get("publish_date")), titulo)
             if e.titulo_pt is None or candidato > e.titulo_pt:

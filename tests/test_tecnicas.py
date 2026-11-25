@@ -11,7 +11,7 @@ from recomendador.catalogo.busca import buscar_no_catalogo
 from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA, sincronizar_generos
 from recomendador.catalogo.isbn import completar_isbn13
 from recomendador.config import LEITOR_ID
-from recomendador.pipeline.tecnicas import CuradaInvalida, carregar_tecnicas
+from recomendador.pipeline.tecnicas import CuradaInvalida, carregar_tecnicas, ler_criterio
 from tests.fabricas import criar_obra
 
 ISBN_ALTA = completar_isbn13("978855081234")  # Edição brasileira da W2
@@ -27,12 +27,15 @@ def _dump(caminho: Path, tipo: str, registros: list[tuple[str, dict]]) -> None:
             f.write(f"/type/{tipo}\t{chave}\t1\t2026-10-01T00:00:00\t{json.dumps(dados)}\n")
 
 
-def _work(chave: str, titulo: str, assuntos: list[str], autor="/authors/OL1A", **extra) -> dict:
+def _work(
+    chave: str, titulo: str, assuntos: list[str], autor: str | tuple = "/authors/OL1A", **extra
+) -> dict:
+    autores = (autor,) if isinstance(autor, str) else autor
     return {
         "key": chave,
         "title": titulo,
         "subjects": assuntos,
-        "authors": [{"type": {"key": "/type/author_role"}, "author": {"key": autor}}],
+        "authors": [{"type": {"key": "/type/author_role"}, "author": {"key": a}} for a in autores],
         **extra,
     }
 
@@ -47,7 +50,14 @@ def _edicoes(work: str, n: int, editora="Springer", ano="2005", **extra) -> list
 
 WORKS = [
     # Entram: ≥ 10 Edições; editora técnica com 2 Edições desde 2012; lançamento de 2024.
-    _work("/works/OL1W", "Big Book", TECNICO, subtitle="Of Code"),
+    # Autor repetido na work: a mesma chave duas vezes e outra chave com a inicial do meio.
+    _work(
+        "/works/OL1W",
+        "Big Book",
+        TECNICO,
+        autor=("/authors/OL1A", "/authors/OL3A", "/authors/OL1A"),
+        subtitle="Of Code",
+    ),
     _work("/works/OL2W", "Fluent Thing", ["Python (Computer program language)"], covers=[42]),
     _work("/works/OL3W", "Lancamento", ["Machine learning"], description="Novo."),
     # Saem: 1 Edição de 2014; editora técnica antes de 2012; editora acadêmica.
@@ -75,6 +85,7 @@ EDICOES = (
         "Alta Books",
         "2019",
         title="Fluente",
+        subtitle="programando  com estilo",
         isbn_13=[ISBN_ALTA],
         languages=[{"key": "/languages/por"}],
     )
@@ -115,6 +126,7 @@ def dumps(tmp_path: Path) -> Path:
         [
             ("/authors/OL1A", {"key": "/authors/OL1A", "name": "Ana  Autora"}),
             ("/authors/OL2A", {"key": "/authors/OL2A", "name": "Martin Fowler"}),
+            ("/authors/OL3A", {"key": "/authors/OL3A", "name": "Ana B. Autora"}),
         ],
     )
     return pasta
@@ -170,11 +182,12 @@ def test_corte_lista_curada_e_obras_que_ja_existem(
 
     big = obras["/works/OL1W"]
     assert big["titulo"] == big["titulo_exibicao"] == "Big Book: Of Code"
-    assert big["autores"] == ["Ana Autora"]
+    assert big["autores"] == ["Ana B. Autora"]  # a forma mais completa, uma vez só
     assert (big["edicoes_ol"], big["popularidade"], big["curada"]) == (10, 0, False)
 
     fluent = obras["/works/OL2W"]
-    assert fluent["titulo_exibicao"] == "Fluente"  # a Edição em português
+    # A Edição em português, com o subtítulo dela, como o título da work.
+    assert fluent["titulo_exibicao"] == "Fluente: programando com estilo"
     assert fluent["tem_edicao_pt"] is True
     assert fluent["capa_url"] == "https://covers.openlibrary.org/b/id/42-M.jpg"
 
@@ -234,6 +247,15 @@ def test_obra_do_leitor_de_biografias_nao_vira_tecnica(
 
     assert catalogo["leitor"] not in _tecnicas(conexao)
     assert r.do_leitor == 0
+
+
+def test_inteligencia_artificial_sozinha_nao_faz_obra_tecnica() -> None:
+    """Anais, divulgação e biografias (Superinteligência, O homem que sabia demais) só têm
+    "Artificial intelligence"; os livros de IA de verdade têm também outro assunto técnico."""
+    criterio = ler_criterio()
+    assert not criterio.tecnica(["artificial intelligence"])
+    assert not criterio.tecnica(["artificial intelligence -- philosophy"])
+    assert criterio.tecnica(["artificial intelligence", "machine learning"])
 
 
 def test_carga_e_idempotente(

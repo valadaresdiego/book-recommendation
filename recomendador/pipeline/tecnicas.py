@@ -25,7 +25,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.fontes.open_library import URL_CAPA, ano_de, texto_descricao
 from recomendador.catalogo.fontes.open_library import assuntos as assuntos_ol
 from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA
-from recomendador.catalogo.texto import normalizar
+from recomendador.catalogo.texto import normalizar, sem_autores_repetidos
 from recomendador.pipeline.enriquecimento_ol import (
     RE_WORK,
     em_portugues,
@@ -33,6 +33,7 @@ from recomendador.pipeline.enriquecimento_ol import (
     json_da_linha,
     linhas_do_dump,
     localizar_dump,
+    titulo_pt_da_edicao,
 )
 
 log = logging.getLogger(__name__)
@@ -163,6 +164,14 @@ def _titulo_da_work(dados: dict) -> str:
     return f"{titulo}: {subtitulo}" if subtitulo else titulo
 
 
+def _titulo_pt(dados: dict) -> str:
+    """O título da Edição em português com o subtítulo dela, como o da work: sem ele, a
+    Edição de *The C Programming Language* daria só "C"."""
+    titulo = titulo_pt_da_edicao(dados)
+    subtitulo = " ".join(str(dados.get("subtitle") or "").split())
+    return f"{titulo}: {subtitulo}" if titulo and subtitulo else titulo
+
+
 def _work_lida(dados: dict) -> WorkLida:
     autores = tuple(
         a["author"]["key"]
@@ -230,7 +239,7 @@ def _ler_edicoes(caminho: Path, works: set[str]) -> dict[str, EdicoesDaWork]:
         e.isbns |= isbns_da_edicao(dados)
         portugues = em_portugues(dados)
         e.em_portugues |= portugues > 0
-        titulo = " ".join(str(dados.get("title") or "").split())
+        titulo = _titulo_pt(dados)
         if titulo and portugues:
             candidato = (portugues, ano or -1, titulo)
             if e.titulo_pt is None or candidato > e.titulo_pt:
@@ -322,7 +331,7 @@ def _obra_tecnica(
         work=w.chave,
         titulo=w.titulo,
         titulo_exibicao=e.titulo_pt[2] if e.titulo_pt else w.titulo,
-        autores=[nomes[a] for a in w.autores if a in nomes],
+        autores=sem_autores_repetidos([nomes[a] for a in w.autores if a in nomes]),
         ano=w.ano or e.ano_min,
         descricao=w.descricao,
         capa_url=URL_CAPA.format(w.capa) if w.capa else None,
