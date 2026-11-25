@@ -110,6 +110,7 @@ def test_regra_3_exige_o_mesmo_sobrenome(
 
 def test_regra_4_obra_nova_com_dados_da_open_library(conexao: Connection, ol: OpenLibrary) -> None:
     criar_obra(conexao, "Vidas Secas", ("Graciliano Ramos",))
+    criar_obra(conexao, "Introduction to Deep Learning", ("Armando Vieira",))
     salvar = criar_obra(conexao, "Salvar o Fogo", ("Itamar Vieira Junior",))
     escolhido = ResultadoBusca(
         titulo="Torto arado",
@@ -133,7 +134,8 @@ def test_regra_4_obra_nova_com_dados_da_open_library(conexao: Connection, ol: Op
     assert nova.capa_url == "https://covers.openlibrary.org/b/id/12369648-M.jpg"
     assert nova.enriquecida
     assert len(r.candidatas) <= 5
-    assert [c.obra_id for c in r.candidatas] == [salvar]  # mesmo autor; Vidas Secas não
+    # Só o mesmo autor: Vidas Secas não, nem outro Vieira.
+    assert [c.obra_id for c in r.candidatas] == [salvar]
 
 
 def test_regra_4_sem_a_open_library_usa_o_google_books(
@@ -145,7 +147,10 @@ def test_regra_4_sem_a_open_library_usa_o_google_books(
 
     assert r.confianca == "nova"
     assert r.obra_nova is not None
-    assert r.obra_nova.titulo == escolhido.titulo
+    assert escolhido.titulo == "Torto Arado (Prémio LeYa 2018)"
+    # Sem a work, o título vem da Edição, sem o prêmio; a página da Obra o mostraria
+    # como "Título original".
+    assert (r.obra_nova.titulo, r.obra_nova.titulo_exibicao) == ("Torto Arado", "Torto Arado")
     assert r.obra_nova.ol_work_key is None
     assert not r.obra_nova.enriquecida
 
@@ -249,6 +254,33 @@ def test_nao_troca_titulo_de_exibicao_que_ja_esta_em_portugues(
     assert linha(conexao, "obra", messias)["titulo_exibicao"] == "O Messias de Duna"
 
 
+def test_nao_troca_o_titulo_de_obra_que_ja_tem_edicao_em_portugues(
+    conexao: Connection, ol: OpenLibrary
+) -> None:
+    # Obra do Leitor criada de uma Edição em português: título e título de exibição iguais.
+    torto = criar_obra(
+        conexao,
+        "Torto Arado",
+        ("Itamar Vieira Junior",),
+        isbns=(TORTO_ARADO_TODAVIA,),
+        origem="leitor",
+    )
+    conexao.execute(text("UPDATE obra SET tem_edicao_pt = true WHERE id = :o"), {"o": torto})
+    quadrinhos = ResultadoBusca(
+        titulo="Torto arado: Romance em quadrinhos",
+        autores=("Itamar Vieira Junior",),
+        ano=2024,
+        capa_url=None,
+        google_volume_id="vol-torto-hq",
+        isbns=(TORTO_ARADO_TODAVIA,),
+        idioma="pt",
+    )
+
+    registrar_resolucao(conexao, resolver_obra(conexao, quadrinhos, ol))
+
+    assert linha(conexao, "obra", torto)["titulo_exibicao"] == "Torto Arado"
+
+
 def test_titulo_da_edicao_em_portugues_sem_o_ruido_do_idioma(
     conexao: Connection, ol: OpenLibrary
 ) -> None:
@@ -298,8 +330,8 @@ def test_escolher_uma_candidata_usa_a_obra_do_catalogo(
     conexao: Connection, ol: OpenLibrary
 ) -> None:
     escolhido = _do_google("torto_arado.json", "lL2GDwAAQBAJ")
-    # Cadastrada sem autor: a regra 3 não casa, mas o título a põe entre as candidatas.
-    existente = criar_obra(conexao, "Torto Arado")
+    # Outro título do mesmo autor: a regra 3 não casa, mas o autor a põe entre as candidatas.
+    existente = criar_obra(conexao, "Salvar o Fogo", ("Itamar Vieira Junior",))
     r = resolver_obra(conexao, escolhido, ol)
     assert existente in {c.obra_id for c in r.candidatas}
     obras_antes = conexao.execute(text("SELECT count(*) FROM obra")).scalar_one()
@@ -341,6 +373,15 @@ def test_manual_sem_correspondencia_propoe_obra_nova_e_candidatas(conexao: Conne
     registrada = registrar_resolucao(conexao, r)
     assert registrada.edicao_id is None
     assert linha(conexao, "obra", registrada.obra_id)["origem"] == "leitor"
+
+
+def test_manual_sem_autor_usa_a_semelhanca_minima_da_busca(conexao: Connection) -> None:
+    torto = criar_obra(conexao, "Torto Arado", ("Itamar Vieira Junior",))
+    criar_obra(conexao, "A casa torta", ("Agatha Christie",))  # só "torto", de leve
+
+    r = resolver_manual(conexao, "Torto Arado", "")
+
+    assert [c.obra_id for c in r.candidatas] == [torto]
 
 
 # --- Título original informado à mão (R1) ---

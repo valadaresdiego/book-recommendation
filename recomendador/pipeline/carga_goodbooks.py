@@ -316,15 +316,15 @@ def carregar_base(conn: Connection, pasta: Path, fusoes: tuple[Fusao, ...] = FUS
 
 # Tabelas com (leitor_id, obra_id) único: a linha da duplicada só passa se o Leitor ainda
 # não tiver uma na que fica.
-_UNICAS_POR_LEITOR = ("leitura", "dispensa", "quero_ler")
+_UNICAS_POR_LEITOR = ("leitura", "dispensa", "quero_ler", "estou_lendo")
 
 
 def _fundir_no_banco(conn: Connection, fusao: Fusao, fica: int) -> None:
     """Funde a Obra da duplicada, se existir de uma carga anterior, na que fica.
 
-    O que é do Leitor (Leituras, Dispensas, Quero ler, Edições, Eventos) e os ISBNs passam
-    para a que fica; o resto (Vizinhos, tags, Gêneros) sai com a Obra, e o próximo
-    `recalcular` refaz os Vizinhos.
+    O que é do Leitor (Leituras, Dispensas, Quero ler, Estou lendo, Edições, Eventos) e os
+    ISBNs passam para a que fica; o resto (Vizinhos, tags, Gêneros) sai com a Obra, e o
+    próximo `recalcular` refaz os Vizinhos.
     """
     duplicada = conn.execute(
         text("SELECT id FROM obra WHERE goodbooks_book_id = :g"), {"g": fusao.duplicada}

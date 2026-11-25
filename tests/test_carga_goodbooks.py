@@ -296,6 +296,45 @@ def test_fusao_com_as_duas_na_estante_fica_a_leitura_da_que_fica(
     ]
 
 
+@pytest.mark.parametrize("lista", ["quero_ler", "estou_lendo"])
+def test_fusao_leva_a_lista_com_a_edicao_para_a_que_fica(
+    conexao: Connection, pasta: Path, lista: str
+) -> None:
+    carregar_base(conexao, pasta, fusoes=())
+    duplicada = _obra(conexao, 7)["id"]
+    edicao = conexao.execute(
+        text("INSERT INTO edicao (obra_id, titulo) VALUES (:o, 'O Hobbit') RETURNING id"),
+        {"o": duplicada},
+    ).scalar_one()
+    conexao.execute(
+        text(f"INSERT INTO {lista} (leitor_id, obra_id, edicao_id) VALUES (:l, :o, :e)"),
+        {"l": LEITOR_ID, "o": duplicada, "e": edicao},
+    )
+
+    carregar_base(conexao, pasta, fusoes=(FUSAO,))
+
+    assert conexao.execute(text(f"SELECT obra_id, edicao_id FROM {lista}")).all() == [
+        (_obra(conexao, 2)["id"], edicao)
+    ]
+
+
+def test_fusao_com_as_duas_em_estou_lendo_fica_a_linha_da_que_fica(
+    conexao: Connection, pasta: Path
+) -> None:
+    carregar_base(conexao, pasta, fusoes=())
+    for gb, posicao in ((7, 1), (2, 2)):
+        conexao.execute(
+            text("INSERT INTO estou_lendo (leitor_id, obra_id, posicao) VALUES (:l, :o, :p)"),
+            {"l": LEITOR_ID, "o": _obra(conexao, gb)["id"], "p": posicao},
+        )
+
+    carregar_base(conexao, pasta, fusoes=(FUSAO,))
+
+    assert conexao.execute(text("SELECT obra_id, posicao FROM estou_lendo")).all() == [
+        (_obra(conexao, 2)["id"], 2)
+    ]
+
+
 def test_fusao_sem_a_duplicada_no_csv_nao_faz_nada(conexao: Connection, pasta: Path) -> None:
     """As fusões reais (257 e 568) não estão no mini."""
     assert carregar_base(conexao, pasta).obras == carregar_base(conexao, pasta, fusoes=()).obras

@@ -72,12 +72,27 @@ def sem_autores_repetidos(nomes: list[str]) -> list[str]:
     return list(por_chave.values())
 
 
-# "(Em Portugues do Brasil)", "(Portuguese Edition)": o idioma que as livrarias põem no título.
-_RE_RUIDO_DO_TITULO = re.compile(r"\s*\([^()]*(portugu|brasil)[^()]*\)\s*$", re.IGNORECASE)
+# O que as livrarias põem no fim do título e não é dele: o idioma ("(Em Portugues do
+# Brasil)", "(Portuguese Edition)"), prêmios ("(Prémio LeYa 2018)", "(Pulitzer Prize
+# Winner)") e selos da Edição ("(Edição de bolso)", "(Tradução Atualizada)", "-(EURO 17.46)").
+# Série e coleção ficam: "(House of Night #6)", "(Coleção Duetos)".
+_RUIDO = r"""
+    portugu | brasil
+    | \b(?: pr[eéê]mios?\b | premiad[oa]\b | vencedor | finalista | award | prize | winner )
+    | \bedi[cç][aã]o\s+(?: especial | comemorativa | de\s+bolso | de\s+luxo | ilustrada
+                         | definitiva | de\s+colecionador )\b
+    | \bilustrad[oa]s?\b
+    | \btradu[cç][aã]o\s+(?: atualizada | revista | de\s+\d{4} )\b
+    | \bleitura\s+f[aá]cil\b
+    | \beuro\s*\d
+"""
+_RE_RUIDO_DO_TITULO = re.compile(
+    rf"\s*-?\s*\([^()]*(?:{_RUIDO})[^()]*\)\s*$", re.IGNORECASE | re.VERBOSE
+)
 
 
 def titulo_sem_ruido(titulo: str) -> str:
-    """O título sem os parênteses finais que só dizem o idioma da Edição."""
+    """O título sem os parênteses finais de idioma, prêmio ou selo da Edição."""
     while (limpo := _RE_RUIDO_DO_TITULO.sub("", titulo)) != titulo and limpo:
         titulo = limpo
     return " ".join(titulo.split())
