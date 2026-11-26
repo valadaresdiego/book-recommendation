@@ -630,13 +630,15 @@ Para cada leitor da amostra, monta uma "Estante" com as Notas de treino, roda a 
 - **Recall@20** e **NDCG@20** (relevância binária: Obra do teste = 1).
 - **Cobertura**: % do Catálogo que aparece em alguma lista top 20.
 - **Baseline obrigatório:** popularidade (top 20 por `popularidade`, fora do treino). Todo modelo precisa vencê-lo em NDCG@20.
+- **Intervalo de confiança** (26/11/2026): o NDCG@20 e o Recall@20 vêm com o IC de 95 % por bootstrap percentil sobre os leitores da amostra (1.000 reamostras, semente 42; `metricas.ndcg@20_ic95` e `recall@20_ic95`). O IC mede só a incerteza da amostra de leitores, não a do sorteio do teste.
+- **Diferença pareada:** duas configurações avaliadas nos mesmos leitores são comparadas pela diferença do NDCG@20 de cada leitor, com o IC dela (`avaliacao.diferenca_pareada`). Se o IC contém o zero, a diferença é um **empate**. Cada execução grava a diferença para a popularidade (`vs_popularidade`) e para as outras execuções do mesmo tipo avaliadas junto (`pareada`, pelo id). A combinação grava a diferença para cada isolada (`vs_isoladas`) e para a melhor da varredura (`vs_melhor`). Cada linha da varredura ganha a diferença para a melhor (`delta_vs_melhor` e o IC, no CSV), e o relatório diz quantas configurações empatam com ela.
 
 ### 9.4 Calibração e critério de entrada
 
 - Varredura de α ∈ {0; 0,25; 0,5; 0,75; 1}, β ∈ {0; 0,25; 0,5; 1} (cada execução isolada grava a de β em `metricas.varredura_beta`), K ∈ {20, 50, 100}, λ ∈ {10, 50, 100} e duas tabelas de peso (a do PRD e a simétrica, 5 → 1 · 4 → 0,5 · 3 → 0 · 2 → −0,5 · 1 → −1). O resultado vai para `reports/avaliacao-*.md` e a grade completa para `reports/varredura-*.csv`.
 - K e λ variam só a coleitura, que a avaliação recalcula sobre o treino a cada configuração. O conteúdo usa os Vizinhos gravados da execução (K = 50); com α = 1, K e λ não se aplicam. O K = 100 no conteúdo, testado à parte em 25/11/2026, piorou a mistura (0,2967 → 0,2927, ADR 0007).
 - A combinação (α de `config`) fica em `metricas.combinada` das duas execuções, com a melhor configuração da varredura em `combinada.melhor`.
-- **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual.
+- **Uma execução só é ativada se o NDCG@20 dela for ≥ ao da ativa do mesmo tipo**, com a mesma divisão e a mesma configuração. `recalcular` aplica isso sozinho, e `ativar --forcar` existe para uso manual. O critério ainda compara as médias: o IC da diferença pareada (§9.3) está no relatório e em `metricas.pareada`, mas não decide a ativação.
 - **Resultado (19/11/2026, ADR 0007):** escalas igualadas, α = 0,25, β = 0, K = 20, λ = 10 e a tabela de pesos do PRD. NDCG@20 combinado 0,3176, contra 0,3117 da Coleitura sozinha, 0,0650 do conteúdo sozinho e 0,0828 da popularidade. Depois, o Leitor voltou o β para 0,25 (NDCG@20 0,2965, cobertura 40 %), para proteger as Estantes com muitas Obras fora da Base.
 - O UCSD Goodreads é validação extra opcional e manual, só local (licença: ADR 0003). Ele não entra no `recalcular`.
 
