@@ -558,6 +558,7 @@ def _gravar(
             text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"),
             [{"o": o, "t": t} for o, t in titulo_pt.items()],
         )
+    regravar_titulos_do_leitor(conn, "base", exceto=titulo_pt)
     # Uma Edição em português gravada pelo Leitor (SPEC §7.2) continua valendo.
     conn.execute(
         text(
@@ -586,6 +587,31 @@ def _gravar(
             linhas_assunto,
         )
     conn.execute(text("UPDATE obra SET enriquecida_em = now() WHERE origem = 'base'"))
+
+
+def regravar_titulos_do_leitor(conn: Connection, origem: str, exceto: Iterable[int] = ()) -> None:
+    """Dá às Obras de `origem` que ficaram sem título em português do dump o da Edição em
+    português mais recente gravada pelo Leitor (SPEC §7.2), sem o ruído: sem isso, uma
+    recarga devolvia *As armas da persuasão* a *Influence* e *Mãos à Obra* ao inglês."""
+    titulos = [
+        {"o": obra, "t": titulo}
+        for obra, bruto in conn.execute(
+            text(
+                """
+                SELECT DISTINCT ON (o.id) o.id, e.titulo
+                FROM obra o JOIN edicao e ON e.obra_id = o.id
+                WHERE o.origem::text = :origem AND o.titulo_exibicao = o.titulo
+                  AND NOT o.id = ANY(:exceto)
+                  AND e.idioma = 'pt' AND e.titulo IS NOT NULL
+                ORDER BY o.id, e.id DESC
+                """
+            ),
+            {"origem": origem, "exceto": sorted(exceto)},
+        )
+        if (titulo := titulo_sem_ruido(bruto))
+    ]
+    if titulos:
+        conn.execute(text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"), titulos)
 
 
 _CONTAGENS = text(

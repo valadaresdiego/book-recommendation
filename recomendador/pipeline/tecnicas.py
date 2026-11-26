@@ -33,7 +33,6 @@ from recomendador.catalogo.texto import (
     chave_do_autor,
     normalizar,
     sem_autores_repetidos,
-    titulo_sem_ruido,
 )
 from recomendador.pipeline.enriquecimento_ol import (
     RE_WORK,
@@ -42,6 +41,7 @@ from recomendador.pipeline.enriquecimento_ol import (
     json_da_linha,
     linhas_do_dump,
     localizar_dump,
+    regravar_titulos_do_leitor,
     titulo_pt_da_edicao,
 )
 from recomendador.pipeline.fusao import fundir_obra
@@ -637,23 +637,7 @@ def _gravar(
             "AND EXISTS (SELECT 1 FROM edicao e WHERE e.obra_id = o.id AND e.idioma = 'pt')"
         )
     )
-    titulos_do_leitor = [
-        {"o": obra, "t": titulo}
-        for obra, bruto in conn.execute(
-            text(
-                """
-                SELECT DISTINCT ON (o.id) o.id, e.titulo
-                FROM obra o JOIN edicao e ON e.obra_id = o.id
-                WHERE o.origem = 'open_library' AND o.titulo_exibicao = o.titulo
-                  AND e.idioma = 'pt' AND e.titulo IS NOT NULL
-                ORDER BY o.id, e.id DESC
-                """
-            )
-        )
-        if (titulo := titulo_sem_ruido(bruto))
-    ]
-    if titulos_do_leitor:
-        conn.execute(text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"), titulos_do_leitor)
+    regravar_titulos_do_leitor(conn, "open_library")
     return len(set(selecionadas) - antes), len(apagadas), mantidas, fundidas
 
 
