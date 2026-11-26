@@ -8,6 +8,7 @@
 ![PyTorch CUDA](https://img.shields.io/badge/embeddings-PyTorch_CUDA-EE4C2C?logo=pytorch&logoColor=white)
 ![uv](https://img.shields.io/badge/deps-uv-DE5FE9)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 
 As listas de "mais vendidos" e os algoritmos das lojas não conhecem o histórico de quem lê. Os serviços que conhecem misturam rede social, controle de leitura e anúncios. Este projeto é um lugar simples para registrar o que já li, dar Nota e receber Sugestões que fazem sentido para o meu gosto, cada uma com o Motivo ("Porque você deu 5 a *Duna*").
 
@@ -28,7 +29,7 @@ A v1 roda **só no computador do Leitor**, sem login: interface em Streamlit, Po
 - [CLI do pipeline](#cli-do-pipeline)
 - [Desenvolvimento](#desenvolvimento)
 - [Documentação](#documentação)
-- [Atribuição e licenças dos dados](#atribuição-e-licenças-dos-dados)
+- [Licença](#licença)
 
 ---
 
@@ -287,10 +288,17 @@ uv run pytest -m "externo or gpu"
 | [docs/research/](docs/research/) | Pesquisas sobre fontes de dados, modelos de embedding e formatos de exportação |
 | [reports/](reports/) | Relatórios da avaliação offline e das varreduras |
 
-## Atribuição e licenças dos dados
+## Licença
 
-- As Notas de leitores vêm do [goodbooks-10k](https://github.com/zygmuntz/goodbooks-10k), sob [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-- Os metadados vêm da [Open Library](https://openlibrary.org) e da [Google Books API](https://developers.google.com/books).
-- O modelo de embedding [`Qwen/Qwen3-Embedding-4B`](https://huggingface.co/Qwen/Qwen3-Embedding-4B) é distribuído sob Apache 2.0.
+O código está sob a [licença MIT](LICENSE).
+
+A licença MIT não vale para os dados de terceiros. Eles seguem as licenças e os termos de origem:
+
+| Dados | Origem | Licença ou termos |
+|---|---|---|
+| Notas de leitores, tags e metadados da Base de coleitura, inclusive a amostra em [`tests/dados/goodbooks-mini/`](tests/dados/goodbooks-mini/) | [goodbooks-10k](https://github.com/zygmuntz/goodbooks-10k) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| Metadados de Obras e Edições, inclusive as respostas gravadas em [`tests/dados/http/ol/`](tests/dados/http/ol/) | [Open Library](https://openlibrary.org) | [CC0 1.0](https://openlibrary.org/developers/licensing) |
+| Resultados de busca, inclusive as respostas gravadas em [`tests/dados/http/gb/`](tests/dados/http/gb/) | [Google Books API](https://developers.google.com/books) | [Termos de serviço das APIs do Google](https://developers.google.com/terms) |
+| Modelo de embedding | [`Qwen/Qwen3-Embedding-4B`](https://huggingface.co/Qwen/Qwen3-Embedding-4B) | Apache 2.0 |
 
 Os dados baixados e calculados ficam em `data/`, fora do git.
