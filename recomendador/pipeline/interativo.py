@@ -1,31 +1,23 @@
-"""Passo 2 do `atualizar` (SPEC §10): embeddings e Vizinhos das Obras do Leitor pendentes.
+"""Passo 3 do `atualizar` (SPEC §10): embeddings e Vizinhos das Obras do Leitor pendentes.
 
-Uma Obra fica pendente quando o cálculo na hora (§7.3) falhou, ou quando a execução de
-conteúdo ativa mudou depois do cálculo dela.
+Uma Obra fica pendente quando o cálculo na hora (§7.3) falhou, quando a execução de
+conteúdo ativa mudou depois do cálculo dela, ou quando o texto dela mudou depois do
+embedding (o enriquecimento pela Open Library, Gêneros novos).
 """
 
 import logging
 import time
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection
 
 from recomendador.recomendacao.embeddings import Codificador
-from recomendador.recomendacao.interativo import calcular_vizinhos_da_obra
+from recomendador.recomendacao.interativo import calcular_vizinhos_da_obra, obras_desatualizadas
 
 log = logging.getLogger(__name__)
 
-_PENDENTES = text(
-    """
-    SELECT o.id FROM obra o
-    JOIN execucao_modelo e ON e.ativa AND e.tipo = 'conteudo'
-    WHERE o.origem = 'leitor' AND o.embedding_execucao_id IS DISTINCT FROM e.id
-    ORDER BY o.id
-    """
-)
-
 
 def obras_pendentes(conn: Connection) -> list[int]:
-    return list(conn.execute(_PENDENTES).scalars())
+    return obras_desatualizadas(conn)
 
 
 def embeddings_pendentes(

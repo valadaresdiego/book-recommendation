@@ -1,4 +1,4 @@
-"""Enriquecimento das Obras do Leitor pela API da Open Library (passo 3 do `atualizar`, SPEC §10).
+"""Enriquecimento das Obras do Leitor pela API da Open Library (passo 2 do `atualizar`, SPEC §10).
 
 As Obras criadas na resolução já nascem enriquecidas quando a Open Library respondeu. Ficam
 pendentes as do cadastro manual e as criadas com a Open Library fora do ar. Este passo

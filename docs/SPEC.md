@@ -125,6 +125,7 @@ obra            id bigserial PK
                 tem_edicao_pt bool default false -- alguma Edição em português conhecida (§6.2, §7.2)
                 embedding vector(1024) null     -- dimensão comum do bake-off (§8.4.1)
                 embedding_execucao_id FK null
+                embedding_texto_hash text null  -- SHA-256 do texto que virou o embedding (§10)
                 enriquecida_em timestamptz null
                 criado_em
                 índices: GIN trigram em (titulo, titulo_original, titulo_exibicao);
@@ -322,7 +323,7 @@ A lista mostra primeiro os itens do catálogo e depois os do Google Books, com c
 
 - Respeita `UNIQUE (leitor_id, obra_id)` e devolve um erro de domínio `JaNaEstante` se a Obra já estiver lá.
 - Sem `edicao_id`, a Leitura fica com a Edição que a Obra tinha em Estou lendo ou em Quero ler, se tinha (ADR 0010).
-- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura (ou de guardar em Quero ler um livro buscado, §8.6) e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Com uma execução `tecnico` ativa, insere também os 50 Vizinhos técnicos dela, pelo mesmo KNN restrito às Obras técnicas (§8.8). Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10).
+- Se a Obra é `origem='leitor'` e ainda não tem o `embedding` da execução de conteúdo ativa, o app calcula na hora, depois de salvar a Leitura (ou de guardar em Quero ler um livro buscado, §8.6) e numa transação à parte (`recomendacao.calcular_vizinhos_da_obra`): gera o embedding com o modelo ativo (carregado uma vez por `st.cache_resource`), grava `obra.embedding` e insere os 50 Vizinhos de conteúdo via KNN no pgvector, restrito a `origem='base'`, com o mesmo limite de 5 Obras do mesmo autor do §8.2. Com uma execução `tecnico` ativa, insere também os 50 Vizinhos técnicos dela, pelo mesmo KNN restrito às Obras técnicas (§8.8). Se falhar (GPU ocupada, modelo ausente), a Leitura já está salva e a Obra fica pendente para o `atualizar` (§10). Junto com o embedding vai `obra.embedding_texto_hash`, o SHA-256 do texto do §8.2 que o gerou (`recomendacao.texto.hash_do_texto`).
 - A Nota pode ficar vazia (R2): a Leitura vai para a Estante, mas fica fora da pontuação.
 
 `estante.mudar_nota(...)` e `estante.remover(...)` (R2) agem direto na tabela. Como as Sugestões são calculadas na leitura (§8.5), a mudança aparece na próxima abertura de "Para você", sem nenhum recálculo.
@@ -696,9 +697,11 @@ O app **não** sobe com o Windows: ele só roda quando o Leitor o abre, com `scr
 `atualizar` faz, em ordem e com tempo máximo total de 10 min:
 
 1. Aplica as migrações pendentes (`alembic upgrade head`).
-2. Gera os embeddings e os Vizinhos de conteúdo das Obras `origem='leitor'` que estão sem eles e, com uma execução `tecnico` ativa, os Vizinhos técnicos delas (§7.3, §8.8).
-3. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução (`pipeline/enriquecimento_leitor.py`). Obra sem ISBN é marcada sem consulta; com a Open Library fora do ar, o resto fica para a próxima abertura.
+2. Enriquece pela API da Open Library as Obras `origem='leitor'` sem `enriquecida_em`, a 1 req/s e no máximo 100 por execução (`pipeline/enriquecimento_leitor.py`). Obra sem ISBN é marcada sem consulta; com a Open Library fora do ar, o resto fica para a próxima abertura.
+3. Gera os embeddings e os Vizinhos de conteúdo das Obras `origem='leitor'` pendentes e, com uma execução `tecnico` ativa, os Vizinhos técnicos delas (§7.3, §8.8). Vem depois do passo 2 para usar o texto já enriquecido.
 4. Grava `ultima_atualizacao` (tabela `config_app`, chave/valor).
+
+Uma Obra do Leitor é **pendente** (`recomendacao.interativo.obras_desatualizadas`) se o embedding dela não é da execução de conteúdo ativa ou se o texto do §8.2 mudou depois dele: o hash do texto atual não bate com `embedding_texto_hash`. O texto muda com a descrição e os assuntos do enriquecimento, com Gêneros novos (`generos-do-leitor`, `mapear-generos`) e com a fusão de Obras. Antes do hash (26/11/2026), as 4 Obras do Leitor do banco do app tinham o embedding do texto de antes do enriquecimento: o cosseno com o embedding do texto atual ia de 0,977 a 0,997. O `ativar` não sabe de que texto veio cada embedding do arquivo da execução e grava o hash nulo, então as Obras do Leitor são refeitas uma vez no `atualizar` seguinte. O `calcular-tecnico` grava o hash dos embeddings que gera.
 
 O recálculo completo (`recalcular`) **não** roda na abertura.
 

@@ -162,6 +162,8 @@ class Obra(Base):
     embedding_execucao_id: Mapped[int | None] = mapped_column(
         ForeignKey("execucao_modelo.id", ondelete="SET NULL")
     )
+    # SHA-256 do texto que virou o embedding; nulo se veio do arquivo de uma execução (§10).
+    embedding_texto_hash: Mapped[str | None] = mapped_column(Text)
     enriquecida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = _criado_em()
 

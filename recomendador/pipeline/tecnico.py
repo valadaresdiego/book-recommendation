@@ -20,7 +20,7 @@ from recomendador.pipeline.execucoes import copiar_vizinhos
 from recomendador.recomendacao.embeddings import Codificador, vetor_pgvector
 from recomendador.recomendacao.interativo import ModeloDiferente
 from recomendador.recomendacao.pontuacao import escala
-from recomendador.recomendacao.texto import carregar_dados, texto_da_obra
+from recomendador.recomendacao.texto import carregar_dados, hash_do_texto, texto_da_obra
 
 log = logging.getLogger(__name__)
 
@@ -56,13 +56,17 @@ def _gerar_embeddings(
     dados = carregar_dados(conn, obra_ids)
     ids = list(dados)
     log.info("Embeddings de %d Obras técnicas com %s", len(ids), codificador.nome)
-    e = codificador.codificar([texto_da_obra(dados[i]) for i in ids])
+    textos = [texto_da_obra(dados[i]) for i in ids]
+    e = codificador.codificar(textos)
     conn.execute(
         text(
-            "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "
-            "WHERE id = :o"
+            "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e, "
+            "embedding_texto_hash = :h WHERE id = :o"
         ),
-        [{"o": o, "v": vetor_pgvector(v), "e": execucao} for o, v in zip(ids, e, strict=True)],
+        [
+            {"o": o, "v": vetor_pgvector(v), "e": execucao, "h": hash_do_texto(t)}
+            for o, v, t in zip(ids, e, textos, strict=True)
+        ],
     )
     return len(ids)
 
