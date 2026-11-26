@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert
 from recomendador.catalogo.isbn import completar_isbn13, normalizar_isbn
 from recomendador.catalogo.tags import tag_util
 from recomendador.db.modelos import Obra, ObraIsbn, ObraTag, OrigemIsbn, OrigemObra
+from recomendador.pipeline.fusao import fundir_obra
 
 log = logging.getLogger(__name__)
 
@@ -314,42 +315,14 @@ def carregar_base(conn: Connection, pasta: Path, fusoes: tuple[Fusao, ...] = FUS
     return ResumoCarga(obras=obras_da_base, isbns=len(isbns), tags=len(linhas_tag), notas=n_notas)
 
 
-# Tabelas com (leitor_id, obra_id) único: a linha da duplicada só passa se o Leitor ainda
-# não tiver uma na que fica.
-_UNICAS_POR_LEITOR = ("leitura", "dispensa", "quero_ler", "estou_lendo")
-
-
 def _fundir_no_banco(conn: Connection, fusao: Fusao, fica: int) -> None:
-    """Funde a Obra da duplicada, se existir de uma carga anterior, na que fica.
-
-    O que é do Leitor (Leituras, Dispensas, Quero ler, Estou lendo, Edições, Eventos) e os
-    ISBNs passam para a que fica; o resto (Vizinhos, tags, Gêneros) sai com a Obra, e o
-    próximo `recalcular` refaz os Vizinhos.
-    """
+    """Funde a Obra da duplicada, se existir de uma carga anterior, na que fica
+    (`pipeline.fusao.fundir_obra`); o próximo `recalcular` refaz os Vizinhos."""
     duplicada = conn.execute(
         text("SELECT id FROM obra WHERE goodbooks_book_id = :g"), {"g": fusao.duplicada}
     ).scalar_one_or_none()
     if duplicada is not None:
-        ids = {"d": duplicada, "f": fica}
-        for tabela in _UNICAS_POR_LEITOR:
-            conn.execute(
-                text(
-                    f"UPDATE {tabela} t SET obra_id = :f WHERE t.obra_id = :d AND NOT EXISTS ("
-                    f"SELECT 1 FROM {tabela} x WHERE x.leitor_id = t.leitor_id AND x.obra_id = :f)"
-                ),
-                ids,
-            )
-            conn.execute(text(f"DELETE FROM {tabela} WHERE obra_id = :d"), ids)
-        for tabela in ("edicao", "evento", "obra_isbn"):
-            conn.execute(text(f"UPDATE {tabela} SET obra_id = :f WHERE obra_id = :d"), ids)
-        conn.execute(
-            text(
-                "UPDATE obra SET tem_edicao_pt = true WHERE id = :f AND EXISTS ("
-                "SELECT 1 FROM edicao WHERE obra_id = :f AND idioma = 'pt')"
-            ),
-            ids,
-        )
-        conn.execute(text("DELETE FROM obra WHERE id = :d"), ids)
+        fundir_obra(conn, duplicada, fica)
     if fusao.titulo:
         # O título de exibição só difere do título quando há Edição em português (§6.2).
         conn.execute(
