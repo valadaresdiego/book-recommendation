@@ -107,6 +107,10 @@ _Evite_: fator, causa
 O maior Contribuinte de uma Sugestão, mostrado em linguagem simples. O Motivo detalhado lista os 3 maiores Contribuintes, com a participação de cada um.
 _Evite_: explicação, justificativa
 
+**Ponto em comum**:
+O que uma Obra e um Vizinho dela em "Parecidos com este" compartilham nos metadados: um autor, as tags de leitores mais raras ou um Gênero. Não é um Motivo: não vem de uma Leitura nem de uma Nota.
+_Evite_: motivo (é outro conceito), afinidade
+
 **Edição em português**:
 Uma Edição que a Open Library marca com o idioma português ou que, sem idioma declarado, tem ISBN brasileiro (978-85 ou 978-65). Uma Obra com alguma delas passa no filtro de idioma de "Para você".
 _Evite_: tradução (nem toda Edição em português é tradução)

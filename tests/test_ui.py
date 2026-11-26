@@ -176,6 +176,25 @@ def test_pagina_da_obra(conexao: Connection) -> None:
     assert "Ainda não há dados de outros leitores para este livro" in [c.value for c in at.caption]
 
 
+def test_pagina_da_obra_mostra_o_ponto_em_comum(conexao: Connection) -> None:
+    obras = _catalogo_com_vizinhos(conexao)
+    conexao.execute(
+        text("UPDATE obra SET autores = '{\"Autor 0\"}' WHERE id = :o"), {"o": obras[1]}
+    )
+    conexao.execute(
+        text("INSERT INTO obra_tag (obra_id, tag, contagem) VALUES (:o, 'time-travel', 5)"),
+        [{"o": obras[0]}, {"o": obras[2]}],
+    )
+    at = _pagina("obra")
+    at.query_params["obra"] = str(obras[0])
+    at.run()
+
+    assert not at.exception
+    legendas = [c.value for c in at.caption]
+    assert "Também de Autor 0" in legendas
+    assert "Temas: time travel" in legendas
+
+
 # --- fase 4: Quero ler, Dispensa, filtros e Motivo detalhado (SPEC §8.6) ---
 
 
