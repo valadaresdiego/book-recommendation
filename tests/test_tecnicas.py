@@ -595,11 +595,10 @@ def test_c_e_cpp_sao_obras_diferentes(conexao: Connection, tmp_path: Path) -> No
     assert set(_obras(conexao)) == {w["key"] for w in works}
 
 
-def test_duplicada_presa_por_evento_deixa_de_ser_tecnica(
-    conexao: Connection, tmp_path: Path
-) -> None:
-    """A Obra da work absorvida fica no banco se um evento aponta para ela, mas sai da
-    Tecnologia: senão continuaria sugerida ao lado da Obra que a absorveu."""
+def test_obra_da_work_absorvida_e_fundida_na_que_fica(conexao: Connection, tmp_path: Path) -> None:
+    """A Obra de uma work que uma carga anterior gravou e esta absorve (*Machine Learning,
+    Revised and Updated Edition* em *Machine learning*) é fundida na que fica, como na
+    fusão do goodbooks: o que o Leitor tinha nela passa, com os ISBNs, e ela sai."""
     segunda = _work(
         "/works/OL61W",
         "Building Machine Learning Systems with Python - Second Edition",
@@ -612,24 +611,38 @@ def test_duplicada_presa_por_evento_deixa_de_ser_tecnica(
         TECNICO,
         autor="/authors/OL2A",
     )
-    _carregar_so(conexao, tmp_path / "1", [segunda], _edicoes("/works/OL61W", 2, **_PACKT))
-    obra = _obras(conexao)["/works/OL61W"]["id"]
+    edicoes_segunda = _edicoes("/works/OL61W", 2, isbn_13=[ISBN_SEGUNDA], **_PACKT)
+    _carregar_so(conexao, tmp_path / "1", [segunda], edicoes_segunda)
+    absorvida = _obras(conexao)["/works/OL61W"]["id"]
     conexao.execute(
         text("INSERT INTO evento (leitor_id, tipo, obra_id) VALUES (:l, 'sugestao_exibida', :o)"),
-        {"l": LEITOR_ID, "o": obra},
+        {"l": LEITOR_ID, "o": absorvida},
+    )
+    conexao.execute(
+        text("INSERT INTO leitura (leitor_id, obra_id, nota, origem) VALUES (:l, :o, 4, 'busca')"),
+        {"l": LEITOR_ID, "o": absorvida},
     )
 
     r = _carregar_so(
         conexao,
         tmp_path / "2",
         [primeira, segunda],
-        _edicoes("/works/OL60W", 3, **_PACKT) + _edicoes("/works/OL61W", 2, **_PACKT),
+        _edicoes("/works/OL60W", 3, **_PACKT) + edicoes_segunda,
     )
 
-    assert set(_obras(conexao)) == {"/works/OL60W", "/works/OL61W"}
-    assert r.mantidas_em_uso == 1
-    assert obra not in _tecnicas(conexao)
-    assert _obras(conexao)["/works/OL60W"]["id"] in _tecnicas(conexao)
+    obras = _obras(conexao)
+    assert set(obras) == {"/works/OL60W"}
+    fica = obras["/works/OL60W"]["id"]
+    assert (r.mantidas_em_uso, r.obras_fundidas) == (0, 1)
+    for tabela in ("evento", "leitura"):
+        assert conexao.execute(text(f"SELECT obra_id FROM {tabela}")).scalars().all() == [fica]
+    assert (
+        conexao.execute(
+            text("SELECT obra_id FROM obra_isbn WHERE isbn13 = :i"), {"i": ISBN_SEGUNDA}
+        ).scalar_one()
+        == fica
+    )
+    assert fica in _tecnicas(conexao)
 
 
 def test_titulo_da_edicao_do_leitor_continua_depois_da_carga(

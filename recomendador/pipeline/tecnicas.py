@@ -44,6 +44,7 @@ from recomendador.pipeline.enriquecimento_ol import (
     localizar_dump,
     titulo_pt_da_edicao,
 )
+from recomendador.pipeline.fusao import fundir_obra
 
 log = logging.getLogger(__name__)
 
@@ -440,6 +441,7 @@ class ResumoTecnicas:
     novas: int
     apagadas: int
     mantidas_em_uso: int  # saíram do corte, mas têm Leitura, lista, Edição ou evento
+    obras_fundidas: int  # Obras de works absorvidas, gravadas antes, fundidas na que fica
     fundidas: int  # works duplicadas (lista curada e mesmo título), juntadas a outra Obra
     do_leitor: int  # Obras do Leitor que viraram técnicas pela work
     com_descricao: int
@@ -476,9 +478,16 @@ _EM_USO = """
 
 
 def _gravar(
-    conn: Connection, obras: list[ObraTecnica], do_leitor: list[int], genero_id: int
-) -> tuple[int, int, int]:
-    """Grava as Obras e devolve (novas, apagadas, mantidas em uso)."""
+    conn: Connection,
+    obras: list[ObraTecnica],
+    do_leitor: list[int],
+    genero_id: int,
+    absorvidas: dict[str, str],
+) -> tuple[int, int, int, int]:
+    """Grava as Obras e devolve (novas, apagadas, mantidas em uso, fundidas).
+
+    `absorvidas` é {work absorvida: work que fica}, da lista curada e da junção pelo título.
+    """
     antes = set(
         conn.execute(text("SELECT ol_work_key FROM obra WHERE origem = 'open_library'")).scalars()
     )
@@ -517,6 +526,23 @@ def _gravar(
             ],
         )
     selecionadas = [o.work for o in obras]
+    # A Obra que uma carga anterior gravou para uma work que esta absorveu é fundida na que
+    # fica, com o que o Leitor tinha nela; senão ficaria presa ao lado dela (§8.8, passo 5).
+    fundidas = 0
+    if absorvidas:
+        ids = dict(
+            conn.execute(
+                text(
+                    "SELECT ol_work_key, id FROM obra "
+                    "WHERE origem = 'open_library' AND ol_work_key = ANY(:w)"
+                ),
+                {"w": [*absorvidas, *absorvidas.values()]},
+            ).all()
+        )
+        for work, fica in absorvidas.items():
+            if work in ids and fica in ids:
+                fundir_obra(conn, ids[work], ids[fica])
+                fundidas += 1
     # Fora do corte: sai se ninguém usa; senão fica, sem os dados da carga anterior mudarem.
     apagadas = conn.execute(
         text(
@@ -628,7 +654,7 @@ def _gravar(
     ]
     if titulos_do_leitor:
         conn.execute(text("UPDATE obra SET titulo_exibicao = :t WHERE id = :o"), titulos_do_leitor)
-    return len(set(selecionadas) - antes), len(apagadas), mantidas
+    return len(set(selecionadas) - antes), len(apagadas), mantidas, fundidas
 
 
 def carregar_tecnicas(
@@ -731,7 +757,10 @@ def carregar_tecnicas(
         _obra_tecnica(w, _juntar([edicoes.get(f) for f in (k, *fundir)]), nomes, curada)
         for k, (w, curada, fundir) in escolhidas.items()
     ]
-    novas, apagadas, mantidas = _gravar(conn, obras, do_leitor, genero_id)
+    absorvidas_por = {f: k for k, (_, _, fundir) in escolhidas.items() for f in fundir}
+    novas, apagadas, mantidas, obras_fundidas = _gravar(
+        conn, obras, do_leitor, genero_id, absorvidas_por
+    )
     resumo = ResumoTecnicas(
         works_tecnicas=len(tecnicas),
         por_ramo=por_ramo,
@@ -741,6 +770,7 @@ def carregar_tecnicas(
         novas=novas,
         apagadas=apagadas,
         mantidas_em_uso=mantidas,
+        obras_fundidas=obras_fundidas,
         fundidas=fundidas,
         do_leitor=len(do_leitor),
         com_descricao=sum(o.descricao is not None for o in obras),
@@ -766,4 +796,5 @@ def _registrar(r: ResumoTecnicas) -> None:
         r.mantidas_em_uso,
     )
     log.info("  works duplicadas juntadas a outra Obra: %d", r.fundidas)
+    log.info("  Obras gravadas antes dessas works, fundidas na que fica: %d", r.obras_fundidas)
     log.info("  Obras do Leitor que viraram técnicas pela work: %d", r.do_leitor)
