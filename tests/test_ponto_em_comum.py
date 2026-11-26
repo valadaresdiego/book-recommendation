@@ -54,7 +54,10 @@ def test_so_tags_genericas_passam_para_o_genero() -> None:
 
 
 def test_tags_pessoais_que_escaparam_da_carga_nao_contam() -> None:
-    pessoais = ("my-ebooks", "kindle-books", "book-club-books", "tbr", "own-to-read", "reread")
+    pessoais = (
+        "my-ebooks", "kindle-books", "book-club-books", "tbr", "own-to-read", "reread",
+        "didn-t-finish", "paperback", "audiobooks", "ebooks",
+    )  # fmt: skip
     obra = Metadados(("A",), (*pessoais, "mystery", "mythology"))
     vizinho = Metadados(("B",), (*pessoais, "mystery", "mythology"))
 

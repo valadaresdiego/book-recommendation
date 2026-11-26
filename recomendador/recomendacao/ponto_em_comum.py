@@ -16,7 +16,6 @@ várias línguas e com ruído ("cheng gong fa", "new york times reviewed"). O te
 só na UI.
 """
 
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -24,6 +23,7 @@ from typing import Literal
 from sqlalchemy import Connection, text
 
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA
+from recomendador.catalogo.tags import tag_util
 from recomendador.catalogo.texto import normalizar
 
 MAX_TAGS = 15  # as mesmas do texto do embedding (§8.2)
@@ -32,19 +32,15 @@ MAX_TEMAS = 2
 TAGS_GENERICAS = frozenset(
     {
         "fiction", "non-fiction", "nonfiction", "novels", "novel", "adult", "adult-fiction",
-        "general-fiction", "literature", "series", "english", "american", "books", "ebooks",
-        "audiobook", "audiobooks", "audio",
+        "general-fiction", "literature", "series", "english", "american",
     }
 )  # fmt: skip
-# Tags da relação do leitor com o livro que passaram pela lista da carga
-# (catalogo/tags_ignoradas.txt): "my-ebooks", "kindle-books", "book-club-books", "tbr"...
-_PESSOAL = re.compile(
-    r"^(my-|own|favou?rite|kindle|nook|library|book-?club|tbr|re-?read|audible|wish|e-?books?$)"
-)
 
 
 def _generica(tag: str) -> bool:
-    return tag.lower() in TAGS_GENERICAS or bool(_PESSOAL.match(tag.lower()))
+    """Genérica ou da relação do leitor com o livro ("my-ebooks", "tbr"). A carga já tira
+    estas (§6.1), mas um banco carregado antes do filtro atual ainda pode tê-las."""
+    return tag.lower() in TAGS_GENERICAS or not tag_util(tag)
 
 
 @dataclass(frozen=True)
