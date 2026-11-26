@@ -423,9 +423,9 @@ def recalcular(
 def atualizar() -> None:
     """Rotina de abertura do app (SPEC §10), em no máximo 10 min.
 
-    1. Migrações. 2. Embeddings e Vizinhos de conteúdo das Obras do Leitor pendentes.
-    3. Enriquece pela Open Library até 100 Obras do Leitor pendentes.
-    4. Grava `ultima_atualizacao`.
+    1. Migrações. 2. Enriquece pela Open Library até 100 Obras do Leitor pendentes.
+    3. Embeddings e Vizinhos de conteúdo das Obras do Leitor pendentes, já com o texto
+    enriquecido. 4. Grava `ultima_atualizacao`.
     """
     import time
 
@@ -436,13 +436,13 @@ def atualizar() -> None:
 
     prazo = time.monotonic() + _PRAZO_DO_ATUALIZAR_S
     aplicar_migracoes()
-    _embeddings_do_leitor(prazo)
     ol = OpenLibrary(config().open_library_user_agent)
     try:
         with _engine().begin() as conn:
             enriquecer_obras_do_leitor(conn, ol, prazo=prazo)
     finally:
         ol.fechar()
+    _embeddings_do_leitor(prazo)
     with _engine().begin() as conn:
         gravar_config(conn, "ultima_atualizacao", datetime.now(UTC).isoformat())
     log.info("Atualização concluída")
@@ -452,7 +452,7 @@ _PRAZO_DO_ATUALIZAR_S = 10 * 60
 
 
 def _embeddings_do_leitor(prazo: float) -> None:
-    """Passo 2 do `atualizar`. O modelo só é carregado se houver Obra pendente."""
+    """Passo 3 do `atualizar`. O modelo só é carregado se houver Obra pendente."""
     from recomendador.pipeline.interativo import embeddings_pendentes, obras_pendentes
     from recomendador.recomendacao.interativo import (
         carregar_codificador,

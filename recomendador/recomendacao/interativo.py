@@ -10,7 +10,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA
 from recomendador.catalogo.texto import normalizar
 from recomendador.recomendacao.embeddings import Codificador, vetor_pgvector
-from recomendador.recomendacao.texto import carregar_dados, texto_da_obra
+from recomendador.recomendacao.texto import carregar_dados, hash_do_texto, texto_da_obra
 
 K = 50
 MAX_MESMO_AUTOR = 5
@@ -33,18 +33,30 @@ def modelo_de_conteudo_ativo(conn: Connection) -> str | None:
     return ativa[1] if ativa else None
 
 
+def obras_desatualizadas(conn: Connection, obra_ids: list[int] | None = None) -> list[int]:
+    """As Obras do Leitor (as pedidas, ou todas) cujo embedding não é o do texto atual na
+    execução de conteúdo ativa: sem embedding dela, ou com um texto diferente do que virou
+    o embedding (`embedding_texto_hash`). Sem execução ativa, nenhuma."""
+    ativa = _ativa(conn)
+    if ativa is None:
+        return []
+    linhas = conn.execute(
+        text(
+            "SELECT id, embedding_execucao_id AS execucao, embedding_texto_hash AS hash "
+            "FROM obra WHERE origem = 'leitor' "
+            "AND (CAST(:ids AS bigint[]) IS NULL OR id = ANY(:ids)) ORDER BY id"
+        ),
+        {"ids": obra_ids},
+    ).all()
+    em_dia = [r for r in linhas if r.execucao == ativa[0] and r.hash is not None]
+    dados = carregar_dados(conn, [r.id for r in em_dia]) if em_dia else {}
+    mudaram = {r.id for r in em_dia if r.hash != hash_do_texto(texto_da_obra(dados[r.id]))}
+    return [r.id for r in linhas if r.execucao != ativa[0] or r.hash is None or r.id in mudaram]
+
+
 def pendente(conn: Connection, obra_id: int) -> bool:
-    """Obra do Leitor sem embedding da execução de conteúdo ativa."""
-    return bool(
-        conn.execute(
-            text(
-                "SELECT 1 FROM obra o JOIN execucao_modelo e ON e.ativa AND e.tipo = 'conteudo' "
-                "WHERE o.id = :o AND o.origem = 'leitor' "
-                "AND o.embedding_execucao_id IS DISTINCT FROM e.id"
-            ),
-            {"o": obra_id},
-        ).first()
-    )
+    """Obra do Leitor sem o embedding do texto atual na execução de conteúdo ativa."""
+    return bool(obras_desatualizadas(conn, [obra_id]))
 
 
 def carregar_codificador(nome: str) -> Codificador:
@@ -72,13 +84,14 @@ def calcular_vizinhos_da_obra(
     if codificador.nome != modelo:
         raise ModeloDiferente(f"Execução ativa usa {modelo}, não {codificador.nome}")
     dados = carregar_dados(conn, [obra_id])[obra_id]
-    vetor = vetor_pgvector(codificador.codificar([texto_da_obra(dados)])[0])
+    texto = texto_da_obra(dados)
+    vetor = vetor_pgvector(codificador.codificar([texto])[0])
     conn.execute(
         text(
-            "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "
-            "WHERE id = :o"
+            "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e, "
+            "embedding_texto_hash = :h WHERE id = :o"
         ),
-        {"v": vetor, "e": execucao, "o": obra_id},
+        {"v": vetor, "e": execucao, "h": hash_do_texto(texto), "o": obra_id},
     )
     # O HNSW devolve no máximo `ef_search` linhas; com folga para o limite por autor.
     conn.execute(text(f"SET LOCAL hnsw.ef_search = {max(40, 3 * k)}"))

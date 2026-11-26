@@ -27,7 +27,7 @@ def ativar(
     Sem `forcar`, só ativa se a execução foi avaliada e o NDCG@20 dela é ≥ ao da ativa do
     mesmo tipo. Numa execução de conteúdo, os embeddings dela passam para `obra.embedding`;
     as Obras que ela não cobre (adicionadas depois do cálculo) ficam sem embedding, à espera
-    do passo 2 do `atualizar` (SPEC §10). Em seguida os Vizinhos técnicos são refeitos com
+    do passo 3 do `atualizar` (SPEC §10). Em seguida os Vizinhos técnicos são refeitos com
     os embeddings novos (`calcular-tecnico`, §8.8). Uma execução `tecnico` não tem
     avaliação offline (ADR 0009) e é ativada sem o critério do §9.4.
     """
@@ -95,7 +95,14 @@ def _copiar_embeddings(conn: Connection, execucao_id: int, pasta: Path) -> None:
         raise AtivacaoRecusada(f"Embeddings da execução {execucao_id} não achados em {arquivo}")
     with np.load(arquivo) as dados:
         ids, e = dados["ids"], dados["embeddings"].astype(np.float32)
-    conn.execute(text("UPDATE obra SET embedding = NULL, embedding_execucao_id = NULL"))
+    # O arquivo não diz de que texto veio cada embedding: sem o hash, as Obras do Leitor são
+    # refeitas uma vez no próximo `atualizar`, com o texto atual (§10).
+    conn.execute(
+        text(
+            "UPDATE obra SET embedding = NULL, embedding_execucao_id = NULL, "
+            "embedding_texto_hash = NULL"
+        )
+    )
     conn.execute(
         text(
             "UPDATE obra SET embedding = CAST(:v AS vector), embedding_execucao_id = :e "

@@ -1,5 +1,6 @@
 """O texto de cada Obra que vira embedding (SPEC §8.2)."""
 
+import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -41,6 +42,12 @@ def texto_da_obra(d: DadosDaObra) -> str:
     if d.descricao and (descricao := _cortar(d.descricao.strip(), MAX_DESCRICAO)):
         texto += " " + descricao
     return texto
+
+
+def hash_do_texto(texto: str) -> str:
+    """O SHA-256 do texto que virou o embedding (`obra.embedding_texto_hash`). Quando o texto
+    da Obra muda (descrição, assuntos ou Gêneros novos), o hash deixa de bater (§10)."""
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
 def _temas(tags: Iterable[str], assuntos: Iterable[str]) -> list[str]:
