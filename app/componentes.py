@@ -404,6 +404,17 @@ def texto_do_motivo(nota: int, titulo: str) -> str:
     return f"Porque você deu {nota} a *{titulo}*"
 
 
+def texto_do_ponto_em_comum(ponto: recomendacao.PontoEmComum | None) -> str | None:
+    """O Ponto em comum de um item de "Parecidos com este" (SPEC §8.3)."""
+    if ponto is None:
+        return None
+    if ponto.tipo == "autor":
+        return f"Também de {ponto.valores[0]}"
+    if ponto.tipo == "temas":
+        return "Temas: " + ", ".join(ponto.valores)
+    return f"Também {ponto.valores[0]}"
+
+
 def texto_do_contribuinte(c: recomendacao.Contribuinte) -> str:
     """Uma linha do Motivo detalhado (R11, SPEC §8.6)."""
     return f"*{c.titulo_exibicao}*, sua nota {c.nota}: {round(100 * c.participacao)} %"
