@@ -1,11 +1,12 @@
 """Página da Obra (R5, SPEC §8.3): a Obra, a Nota do Leitor e os Vizinhos das execuções ativas."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import Connection, text
 
 from recomendador.catalogo.generos import SLUG_TECNOLOGIA
+from recomendador.recomendacao.ponto_em_comum import PontoEmComum, pontos_em_comum
 
 VIZINHOS_NA_PAGINA = 10
 
@@ -18,6 +19,7 @@ class ObraVizinha:
     capa_url: str | None
     similaridade: float
     lido: bool  # está na Estante (selo "lido")
+    ponto_em_comum: PontoEmComum | None = None  # só nos Parecidos (R5a)
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,11 @@ def pagina_da_obra(conn: Connection, obra_id: int, leitor_id: uuid.UUID) -> Pagi
     original = o.titulo_original or (o.titulo if o.titulo != o.titulo_exibicao else None)
     if original and original.strip() == o.titulo_exibicao.strip():
         original = None
+    # Numa Obra técnica, os Parecidos são outras Obras técnicas (§8.3, §8.8).
+    parecidos = (o.tecnica and _vizinhos(conn, obra_id, leitor_id, "tecnico")) or _vizinhos(
+        conn, obra_id, leitor_id, "conteudo"
+    )
+    pontos = pontos_em_comum(conn, obra_id, [v.obra_id for v in parecidos])
     return PaginaObra(
         obra_id=o.id,
         titulo_exibicao=o.titulo_exibicao,
@@ -97,9 +104,7 @@ def pagina_da_obra(conn: Connection, obra_id: int, leitor_id: uuid.UUID) -> Pagi
         generos=tuple(o.generos),
         na_estante=o.na_estante,
         nota=o.nota,
-        # Numa Obra técnica, os Parecidos são outras Obras técnicas (§8.3, §8.8).
-        parecidos=(o.tecnica and _vizinhos(conn, obra_id, leitor_id, "tecnico"))
-        or _vizinhos(conn, obra_id, leitor_id, "conteudo"),
+        parecidos=[replace(v, ponto_em_comum=pontos[v.obra_id]) for v in parecidos],
         quem_leu=_vizinhos(conn, obra_id, leitor_id, "coleitura"),
         dispensada=o.dispensada,
         quero_ler=o.quero_ler,

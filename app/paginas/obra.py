@@ -12,6 +12,7 @@ from componentes import (
     mostrar_capa,
     parei_de_ler,
     quero_ler,
+    texto_do_ponto_em_comum,
     tirar_de_quero_ler,
 )
 
@@ -41,6 +42,8 @@ def _vizinhos(titulo: str, itens: list[recomendacao.ObraVizinha], vazio: str, ch
                     abrir_obra(v.obra_id)
                 lido = " · ✅ lido" if v.lido else ""
                 st.caption(autores_em_texto(v.autores[:1]) + lido)
+                if ponto := texto_do_ponto_em_comum(v.ponto_em_comum):
+                    st.caption(ponto)
 
 
 def _acoes(p: recomendacao.PaginaObra) -> None:

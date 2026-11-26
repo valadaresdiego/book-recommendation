@@ -19,6 +19,7 @@ from recomendador.recomendacao.obra import (
     PaginaObra,
     pagina_da_obra,
 )
+from recomendador.recomendacao.ponto_em_comum import PontoEmComum
 from recomendador.recomendacao.sugestoes import (
     CONTRIBUINTES,
     Contribuinte,
@@ -37,6 +38,7 @@ __all__ = [
     "ObraVizinha",
     "PaginaObra",
     "ParaVoce",
+    "PontoEmComum",
     "Sugestao",
     "calcular_vizinhos_da_obra",
     "carregar_codificador",
