@@ -54,7 +54,6 @@ class OrigemLeitura(enum.StrEnum):
     SUGESTAO = "sugestao"
     MANUAL = "manual"
     CATALOGO = "catalogo"
-    IMPORTACAO = "importacao"  # do histórico exportado do Goodreads (SPEC §8.9)
 
 
 class TipoExecucao(enum.StrEnum):

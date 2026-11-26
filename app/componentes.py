@@ -267,29 +267,6 @@ def _e_uma_destas(estado: _Estado, r: catalogo.Resolucao) -> int | None:
     return None
 
 
-def e_uma_destas(
-    prefixo: str, resolucao: catalogo.Resolucao
-) -> tuple[catalogo.Resolucao, int | None, str | None]:
-    """A pergunta "É uma destas?" fora da busca, para uma linha da Importação (SPEC §8.9).
-
-    Devolve a resolução atual (o título original pode ter achado a Obra no Catálogo), a
-    candidata escolhida e o título original digitado sem clicar em "Procurar".
-    """
-    estado = _Estado(prefixo)
-    if estado["resolucao"] is None:
-        estado["resolucao"] = resolucao
-    r: catalogo.Resolucao = estado["resolucao"]
-    if r.obra_nova is None:
-        st.caption("Obra identificada no Catálogo pelo título original e o autor.")
-        return r, None, None
-    escolha = _e_uma_destas(estado, r)
-    return r, escolha, st.session_state.get(estado.chave("original")) or None
-
-
-def esquecer_e_uma_destas(prefixo: str) -> None:
-    _Estado(prefixo).recomecar()
-
-
 def _gravar(
     estado: _Estado,
     r: catalogo.Resolucao,

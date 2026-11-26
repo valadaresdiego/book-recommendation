@@ -14,7 +14,6 @@ from recomendador.catalogo.generos import SLUG_TECNOLOGIA, GeneroDoCatalogo, lis
 from recomendador.catalogo.resolucao import (
     ObraRegistrada,
     informar_titulo_original,
-    registrar_isbns,
     registrar_resolucao,
     resolver_manual,
     resolver_obra,
@@ -54,7 +53,6 @@ __all__ = [
     "informar_titulo_original",
     "listar_generos",
     "open_library",
-    "registrar_isbns",
     "registrar_resolucao",
     "resolver_manual",
     "resolver_obra",

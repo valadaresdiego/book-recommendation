@@ -1,6 +1,6 @@
 # SPEC: Recomendador de Livros (v1, local)
 
-> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 6 (o P0 e o P1 do PRD) e o R9 do P2 (§8.9)
+> **Status:** rascunho · **Data:** 17/11/2026 · **Cobre:** fases 0 a 6 (o P0 e o P1 do PRD)
 >
 > **Leia antes:** [PRD](PRD.md) (o quê e por quê) · [GLOSSARY](../GLOSSARY.md) (termos; esta SPEC usa só eles) · [ADRs](adr/) (decisões difíceis de reverter) · pesquisas em [research/](research/)
 
@@ -12,7 +12,7 @@ Esta SPEC diz **como** construir o que o PRD pede. Ela não repete objetivos nem
 
 | Entra (detalhado) | Entra só como ponto de extensão | Entra só como restrição |
 |---|---|---|
-| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura), fase 4 (Ajustes: R7 dispensar, R8 quero ler, R10 filtros, R11 Motivo detalhado, §8.6), fase 5 (R13 Estou lendo, §8.7), fase 6 (R14 Obras técnicas e aba "Tecnologia", §8.8), R9 importar histórico do Goodreads (§8.9) | — | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar do Hardcover e do Skoob (§13) |
+| Fase 0 (fundação), fase 1 (Estante + Montagem da Estante), fase 2 (Parecidos), fase 3 (Coleitura), fase 4 (Ajustes: R7 dispensar, R8 quero ler, R10 filtros, R11 Motivo detalhado, §8.6), fase 5 (R13 Estou lendo, §8.7), fase 6 (R14 Obras técnicas e aba "Tecnologia", §8.8) | — | Multiusuário, hospedagem, Base de coleitura maior, LLM nos Motivos, importar histórico (R9, §13) |
 
 Mudanças em relação ao PRD original, registradas nos ADRs e já incorporadas no PRD:
 
@@ -147,7 +147,7 @@ obra_tag        obra_id FK · tag text · contagem int      -- top 30 tags útei
 
 leitura         id bigserial PK · leitor_id FK · obra_id FK · edicao_id FK null
                 nota smallint null CHECK (nota BETWEEN 1 AND 5)
-                origem enum('busca','montagem','sugestao','manual','catalogo','importacao')
+                origem enum('busca','montagem','sugestao','manual','catalogo')
                 criado_em · atualizado_em
                 UNIQUE (leitor_id, obra_id)       -- deduplicação de R1 (mesma Obra)
 
@@ -375,7 +375,6 @@ As Leituras criadas aqui recebem `origem='montagem'`.
 | `sugestao_dispensada` | `{posicao, lista}`, com `posicao` e `lista` nulas fora de "Para você" | O2 (R7) |
 | `quero_ler_salvo` | `{posicao, lista}`, idem; nulas também vindo da busca, então o O2 não conta | O2 (R8) |
 | `leitura_iniciada` | `{posicao}`, idem; vinda de Quero ler, a posição salva lá | — (R13) |
-| `historico_importado` | `{fonte, linhas, leituras, quero_ler, estou_lendo, ja_na_estante, repetidas, sem_correspondencia, ignoradas}`, uma vez por importação (§8.9) | — (R9) |
 
 A página "Métricas" é um P1 opcional. Na v1 basta consultar com SQL. A SPEC traz as consultas de O2, O3 e O5 em `reports/consultas-metricas.sql`, que faz parte da entrega da fase 1.
 
@@ -627,44 +626,9 @@ Decisões do Leitor (19/11/2026, [ADR 0009](adr/0009-obras-tecnicas-da-open-libr
 - Os eventos `sugestao_exibida`, `sugestao_dispensada` e `quero_ler_salvo` levam `lista` (§7.6). A consulta do O2 em `reports/consultas-metricas.sql` separa as duas listas.
 - A Montagem da Estante ganha o chip Tecnologia, com a ordem do §7.4.
 
-### 8.9 Importar histórico do Goodreads (R9, P2)
+### 8.9 Importar histórico (R9): retirada
 
-Decisões do Leitor (26/11/2026, [ADR 0011](adr/0011-importacao-do-goodreads.md)): só o CSV do Goodreads; `to-read` vai para Quero ler e `currently-reading` para Estou lendo; vale a Estante; a data de leitura só ordena; a revisão das falhas vale na sessão; a resolução segue a ordem do §7.2. Os formatos estão em [research/formatos-de-exportacao.md](research/formatos-de-exportacao.md).
-
-**Leitura do arquivo** (`estante.ler_goodreads(conteudo: bytes) -> list[LinhaImportada]`, `recomendador/estante/importacao.py`):
-- UTF-8, com ou sem BOM. As colunas são lidas pelo nome, e o arquivo é recusado (`ArquivoInvalido`) se faltar `Title`, `Author`, `ISBN`, `ISBN13`, `My Rating` ou `Exclusive Shelf`.
-- `ISBN` e `ISBN13` vêm como fórmula (`="9780439023481"`, vazio `=""`). Viram ISBN-13 pelo `normalizar_isbn`, sem repetir; um inválido é descartado.
-- `Title` perde o sufixo de série, como na carga do goodbooks (§6.1): "The Blade Itself (The First Law, #1)" vira "The Blade Itself". Medido em 26/11/2026 no banco do app, com 500 títulos do goodbooks como se fossem linhas sem ISBN: a regra 3 do §7.2 acerta 378 com a série e 497 sem ela.
-- `autores` = `Author` mais `Additional Authors` (separados por vírgula). `My Rating` 0 é sem Nota; de 1 a 5, a Nota.
-- `Exclusive Shelf`: `read` → lida, `currently-reading` → lendo, `to-read` → quero ler. Qualquer outra (`did-not-finish`...) é ignorada.
-- `data` = `Date Read` ou, vazio, `Date Added` (`AAAA/MM/DD`). Só ordena a gravação.
-
-**Prévia** (`estante.preparar_importacao(conn, leitor_id, linhas, ol, ao_avancar=None) -> Previa`). Não grava nada. Cada linha não ignorada passa por `catalogo.resolver_obra` com um `ResultadoBusca` sem volume do Google Books (título, autores e ISBNs do arquivo), na ordem do §7.2. Sem ISBN, não há consulta à Open Library. `ao_avancar(feitas, total)` alimenta a barra de progresso. A `Previa` separa:
-- `encontradas`: regras 1 a 3, com a Obra;
-- `sem_correspondencia`: regra 4, com a `Resolucao` (Obra proposta e candidatas);
-- `ignoradas`: prateleira fora das três.
-
-**Importação** (`estante.importar(conn, leitor_id, previa) -> Relatorio`), numa transação:
-1. As linhas encontradas da mesma Obra (duas Edições, a mesma Obra pelo ISBN e pelo título) viram uma: vale lida, depois lendo, depois quero ler; entre as lidas, a com Nota e, depois, a de `data` mais recente.
-2. As linhas são gravadas em ordem de `data` crescente (sem data, no fim, na ordem do arquivo). A Estante desempata a data de inclusão pelo id (§7.5), então a lida mais recentemente aparece primeiro.
-3. Lida: `estante.adicionar(..., origem='importacao')`, que tira a Obra de Quero ler e de Estou lendo. Lendo: `salvar_estou_lendo`, que a tira de Quero ler. Quero ler: `salvar_quero_ler`, só se ela não estiver em Estou lendo. Posição e Edição ficam nulas.
-4. **Vale a Estante.** Uma Obra que já está lá não muda e entra no relatório (`ja_na_estante`), com as duas Notas. Uma Obra que já está na lista de destino também não muda.
-5. Os ISBNs da linha entram em `obra_isbn` com `origem='leitor'`, como os de uma Edição da busca (§7.2, `catalogo.registrar_isbns`). Reimportar o arquivo resolve pela regra 1.
-6. Registra `historico_importado` (§7.6) com as contagens.
-
-O `Relatorio` traz quantas Leituras, Quero ler e Estou lendo entraram, as Obras que já estavam na Estante (com as duas Notas), as linhas repetidas e as ignoradas.
-
-**Revisão** (`estante.importar_linha(conn, leitor_id, linha_resolvida, escolha=None) -> Desfecho`). Para uma linha sem correspondência, `escolha` é uma candidata de "É uma destas?". Sem ela, a Obra proposta é criada (`origem='leitor'`). Grava pelo `registrar_resolucao` e depois segue os passos 3 a 5. O título original digitado reaplica a regra 3 (`informar_titulo_original`), como na busca. A revisão não é gravada: reimportar o mesmo arquivo pula as Obras que já entraram (passo 4) e mostra de novo só as que faltam.
-
-**Eventos e métricas.** A Leitura importada registra `leitura_salva {origem: 'importacao', duracao_s: null}`, fora do O3, que só conta as com `duracao_s`. Ela não é `sugestao`, então fica fora do O5. `quero_ler_salvo` e `leitura_iniciada` vêm com posição nula, fora do O2. O indicador "1ª semana" de `reports/consultas-metricas.sql` exclui `origem='importacao'` da contagem e do início de uso. A taxa de correspondência com a Base (fase 3) conta as importadas, porque mede as Leituras.
-
-**UI.** Página "Importar" no `st.navigation`, depois de Adicionar. Passos:
-1. Envio do CSV (`st.file_uploader`) e "Analisar", com barra de progresso.
-2. Resumo da prévia: encontradas, sem correspondência, ignoradas e a taxa. O botão "Importar N linhas" grava as encontradas.
-3. O relatório, com a lista "Já estavam na Estante" mostrando as Notas diferentes.
-4. A revisão das linhas sem correspondência, uma por vez: título e autor do arquivo, "É uma destas?" com as candidatas, o título original e "Nenhuma: criar Obra nova", e os botões "Importar" e "Pular". As puladas ficam numa lista no fim. Uma Obra nova ganha os Parecidos na hora (§7.3).
-
-**Critério de aceite** (PRD R9): num CSV de teste no formato do Goodreads, ≥ 90 % das linhas cujas Obras estão no Catálogo entram sozinhas; as outras aparecem na revisão. Coberto por teste contra o banco real. Medido em 26/11/2026 no banco do app, só com leitura e sem a Open Library: um CSV no formato do Goodreads com 300 Obras do goodbooks, 40 % sem ISBN e com a série no título, achou as 300 (172 pela regra 1, 128 pela 3) em 0,8 s, 297 na Obra certa. Dois dos erros vêm de ISBNs do goodbooks que estão em outra Obra (*Skeleton Key*, *Graduation Day*, §6.1), e o terceiro é um volume de *Naruto* com título em japonês. A medição é otimista: os títulos são os do próprio Catálogo, em inglês.
+A importação do CSV do Goodreads foi implementada em 26/11/2026 e retirada no mesmo dia, porque o Leitor não usa o Goodreads ([ADR 0011](adr/0011-importacao-do-goodreads.md)). Saíram a página Importar, `estante/importacao.py`, o evento `historico_importado` e a origem `importacao` das Leituras (migração 0013). O R9 volta a ser só uma restrição do P2 (§13).
 
 ---
 
@@ -727,7 +691,7 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 
 ## 11. UI Streamlit
 
-`st.navigation` com oito páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
+`st.navigation` com sete páginas. A página Obra fica oculta do menu e é acessada por `?obra=<id>`.
 
 | Página | Conteúdo | Requisitos |
 |---|---|---|
@@ -736,7 +700,6 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 | Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". A busca do §7.1, só com "Quero ler": atrás do toggle "Buscar livro" e aberta quando a lista está vazia, ao lado da chamada para "Para você". | R1, R8, R13 |
 | Estante | §7.5 | R3 |
 | Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar, ou "Quero ler" sem Nota. Também tem o cadastro manual. | R1, R2, R8 |
-| Importar | CSV do Goodreads → prévia → importar → relatório → revisão das linhas sem correspondência (§8.9) | R9 |
 | Montagem da Estante | §7.4 | — |
 | Obra (oculta) | §8.3, com "Quero ler", "Comecei a ler" (§8.7) e "Desfazer" a Dispensa (§8.6) | R5, R7, R8, R13 |
 
@@ -765,14 +728,14 @@ As chamadas reais às APIs externas e à GPU ficam em testes marcados `@pytest.m
 
 ## 13. Pontos de extensão (P1) e restrições (P2)
 
-**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6), R13 na fase 5 (§8.7) e R14 na fase 6 (§8.8). Do P2, o R9 entrou só com o Goodreads (§8.9).
+**P1:** R7, R8, R10 e R11 foram implementados na fase 4 (§8.6), R13 na fase 5 (§8.7) e R14 na fase 6 (§8.8). Do P2, nada está implementado: a importação do Goodreads entrou e foi retirada (§8.9).
 
 **P2, o que o desenho não pode impedir:**
 
 - **Multiusuário e hospedagem:** `leitor_id` em tudo que é pessoal. A UI está isolada do pacote, então trocar o Streamlit não toca o domínio (ADR 0005).
 - **Notas dos Leitores na Coleitura:** o pipeline lê as Notas de uma fonte abstrata (`fontes_de_notas`), que hoje é só o Parquet.
 - **Base de coleitura maior:** a carga é por adaptador (`carregar-base --fonte goodbooks10k`).
-- **Importar histórico:** o Goodreads entrou no §8.9, com `resolver_obra` (§7.2) linha a linha. O Hardcover e o Skoob entram como outra função de leitura que devolve `LinhaImportada`, quando houver um arquivo real (ADR 0011). Uma meia nota é arredondada para baixo.
+- **Importar histórico (R9):** `catalogo.resolver_obra` (§7.2) resolve uma linha de um arquivo exportado como resolve uma Edição da busca, então um formato novo é uma função de leitura mais a revisão das linhas sem correspondência, com "É uma destas?". Uma Leitura importada precisaria de uma origem própria no enum, para ficar fora do O3, do O5 e do indicador da 1ª semana (ADR 0011).
 - **LLM nos Motivos:** o Motivo é um dado estruturado (`motivo_obra_id`, parcelas), e o texto é montado só na UI.
 
 ---
@@ -790,7 +753,6 @@ Os critérios do PRD valem como estão. Esta tabela acrescenta os critérios té
 | **4. Ajustes** | R7, R8, R10, R11 (§8.6), migração 0006, `tem_edicao_pt` no `enriquecer-ol` | Critérios de R7, R8, R10 e R11 do PRD cobertos por teste contra o banco real; o teste de paridade SQL × avaliação inalterado; a consulta do O2 (salvas ÷ (salvas + dispensadas) nas top 10) em `reports/consultas-metricas.sql`; `enriquecer-ol` rodado de novo no banco do app, com a contagem de `tem_edicao_pt` no log |
 | **5. Estou lendo** | R13 (§8.7, ADR 0008), migração 0007, página Estou lendo | Critério do R13 do PRD coberto por teste contra o banco real: entra por "Para você", Quero ler e a página da Obra; sai de Quero ler ao entrar; "Já li" tira da lista e grava `origem='sugestao'` com a posição vinda de Quero ler; não aparece em "Para você"; o teste de paridade SQL × avaliação inalterado |
 | **6. Obras técnicas** | R14 (§8.8, ADR 0009), migração 0008, `carregar-tecnicas`, `calcular-tecnico`, Gênero Tecnologia, aba "Tecnologia" | Lista curada revisada pelo Leitor; no banco do app, ≥ 3.000 Obras `open_library`, com as contagens do log; *AI Engineering*, *Designing Data-Intensive Applications*, *Clean Code*, *Refactoring* e *Domain-Driven Design* no Catálogo; nenhuma Obra `open_library` como Vizinho de conteúdo; a lista geral de "Para você" igual à de antes da carga (mesma consulta, mesmas execuções de conteúdo e de coleitura); com 3 Leituras com Nota, nenhuma técnica, a aba "Tecnologia" devolve ≥ 10 Sugestões técnicas; aba ≤ 500 ms; `sugestao_exibida` com `lista`; o teste de paridade SQL × avaliação inalterado |
-| **R9. Importar histórico** | §8.9, ADR 0011, migração 0011, página Importar | CSV do Goodreads de teste com ≥ 90 % das linhas com Obra no Catálogo importadas sozinhas e as outras na revisão; reimportar não duplica nem muda a Estante; Leituras importadas fora do O3, do O5 e do indicador da 1ª semana; preview na tela com uma cópia do banco |
 
 ---
 

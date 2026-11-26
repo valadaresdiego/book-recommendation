@@ -129,7 +129,7 @@ Persona única: **o leitor** (eu).
 
 - **Multiusuário**: quando houver outros leitores, usar as notas deles no "quem leu também gostou" (por isso o `usuario_id` em R6).
 - **Base pública maior** (ex.: UCSD Book Graph, ~2 M livros) para aumentar a cobertura de R5b.
-- **R9 Importar histórico** _(movido do P1: não tenho histórico em nenhum serviço hoje; a Montagem da Estante, R12, cobre o começo)_: CSV do Goodreads, notas do Hardcover ou planilha do Skoob. Importa ≥ 90 % das linhas com correspondência e mostra as que falharam para resolver à mão.
+- **R9 Importar histórico** _(movido do P1: não tenho histórico em nenhum serviço hoje; a Montagem da Estante, R12, cobre o começo)_: CSV do Goodreads, notas do Hardcover ou planilha do Skoob. Importa ≥ 90 % das linhas com correspondência e mostra as que falharam para resolver à mão. A importação do Goodreads chegou a ser feita e foi retirada em 26/11/2026, porque não uso o Goodreads ([ADR 0011](adr/0011-importacao-do-goodreads.md)).
 - **Hospedagem** (acesso pelo celular, login): segunda onda, depois de a v1 local se provar útil.
 - **LLM** para reescrever motivos e reordenar sugestões.
 - **Onde conseguir o livro**: biblioteca, loja, e-book.
