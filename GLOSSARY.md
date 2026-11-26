@@ -69,6 +69,10 @@ _Evite_: descarte, rejeição, bloqueio
 O primeiro passo do Leitor com a Estante vazia: ele escolhe gêneros de interesse e dá Nota às Obras populares do Catálogo que já leu, até ter Notas suficientes para receber Sugestões.
 _Evite_: onboarding, cadastro inicial, importação
 
+**Importação**:
+A entrada, de uma vez, do histórico que o Leitor exportou de outro serviço (hoje, só o CSV do Goodreads): cada linha vira uma Leitura, um item de Quero ler ou de Estou lendo, pela Resolução. As linhas sem Obra no Catálogo vão para a revisão, com "É uma destas?".
+_Evite_: migração, sincronização, Montagem da Estante (é outra coisa)
+
 ## Recomendação
 
 **Base de coleitura**:
