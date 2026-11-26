@@ -20,8 +20,9 @@ from recomendador.catalogo import (
     resolver_manual,
     resolver_obra,
 )
-from recomendador.catalogo.fontes.google_books import _resultado
+from recomendador.catalogo.fontes.google_books import GoogleBooks, _resultado
 from recomendador.catalogo.fontes.open_library import OpenLibrary
+from recomendador.catalogo.generos import sincronizar_generos
 
 DUNA_ALEPH = "9788576573135"
 MESSIAS_ALEPH = "9788576572381"
@@ -409,3 +410,70 @@ def test_titulo_original_a_mao_sem_correspondencia_fica_na_obra_nova(
     assert r.obra_nova is not None and r.obra_nova.titulo_original == "Torto Arado"
     registrada = registrar_resolucao(conexao, r)
     assert linha(conexao, "obra", registrada.obra_id)["titulo_original"] == "Torto Arado"
+
+
+def test_resultado_do_google_traz_as_categorias() -> None:
+    r = _resultado(
+        {
+            "id": "yhp9EAAAQBAJ",
+            "volumeInfo": {
+                "title": "SQL para Análise de Dados",
+                "categories": ["Computers / Data Science / General", " ", 7],
+            },
+        }
+    )
+    assert r is not None
+    assert r.categorias == ("Computers / Data Science / General",)
+
+
+def test_volume_do_google_pelo_id() -> None:
+    def responder(pedido: httpx.Request) -> httpx.Response:
+        assert pedido.url.path == "/books/v1/volumes/yhp9EAAAQBAJ"
+        assert pedido.url.params["key"] == "chave"
+        return httpx.Response(
+            200,
+            json={
+                "id": "yhp9EAAAQBAJ",
+                "volumeInfo": {"title": "SQL para Análise de Dados", "categories": ["Computers"]},
+            },
+        )
+
+    gb = GoogleBooks("chave", transporte=httpx.MockTransport(responder))
+
+    volume = gb.volume("yhp9EAAAQBAJ")
+
+    assert volume is not None
+    assert volume.categorias == ("Computers",)
+
+
+def test_registrar_obra_nova_ganha_o_genero_das_categorias(
+    conexao: Connection, ol: OpenLibrary
+) -> None:
+    """A Obra do Leitor não tem tags de leitores: o Gênero vem das categorias da Edição do
+    Google Books (SPEC §6.3). *SQL para Análise de Dados* ficava fora de Tecnologia."""
+    sincronizar_generos(conexao)
+    escolhido = ResultadoBusca(
+        titulo="Torto arado",
+        autores=("Itamar Vieira Junior",),
+        ano=2019,
+        capa_url=None,
+        google_volume_id="vol-torto",
+        isbns=(TORTO_ARADO_TODAVIA,),
+        idioma="pt",
+        categorias=("Fiction / Literary",),
+    )
+
+    registrada = registrar_resolucao(conexao, resolver_obra(conexao, escolhido, ol))
+
+    generos = (
+        conexao.execute(
+            text(
+                "SELECT g.slug FROM obra_genero og JOIN genero g ON g.id = og.genero_id "
+                "WHERE og.obra_id = :o"
+            ),
+            {"o": registrada.obra_id},
+        )
+        .scalars()
+        .all()
+    )
+    assert generos == ["ficcao-contemporanea"]

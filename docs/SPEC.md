@@ -208,6 +208,7 @@ Comandos (`python -m recomendador <comando>`, via `typer`):
 | `carregar-base` | Baixa (se faltar) e carrega o goodbooks-10k: 10 mil Obras (`origem='base'`), `obra_isbn`, `obra_tag` e Parquet das Notas | Sim (upsert por `goodbooks_book_id`) |
 | `enriquecer-ol --dumps data/ol` | §6.2 | Sim |
 | `mapear-generos` | §6.3 | Sim |
+| `generos-do-leitor` | §6.3. Gêneros das Obras do Leitor gravadas antes das categorias do Google Books. | Sim (só pede as que não têm categorias) |
 | `calcular-conteudo --modelo X` | §8.2. Cria uma execução de conteúdo **inativa**: Vizinhos em `vizinho`, embeddings em `data/embeddings/conteudo-<id>.npz`. | Cria uma execução nova |
 | `bakeoff` | §8.4. `calcular-conteudo` de cada finalista, teste entre idiomas, tempo de uma Obra e `avaliar` de todos. Não ativa nada. | Cria execuções novas |
 | `calcular-coleitura [--k 20 --lambda 10 --min-coleitores 5]` | §8.1. Cria uma execução de coleitura **inativa**. | Cria uma execução nova |
@@ -275,6 +276,7 @@ Lista revisada e aprovada sem mudanças pelo Leitor (18/11/2026). Fica em `catal
 `obra_genero.forca` = soma das `contagem` das tags do Gênero na Obra ÷ soma de todas as `contagem` úteis da Obra. Uma Obra pertence ao Gênero se `forca ≥ 0,05`.
 
 - **Tecnologia** usa só tags estritas. `technology` e `tech` ficam de fora, porque marcam livros *sobre* tecnologia (*Steve Jobs*). Uma Obra que também é de "Biografias e memórias" sai de Tecnologia (*Ghost in the Wires*). Com essas regras, entram 4 Obras da Base: *The Pragmatic Programmer*, *Don't Make Me Think*, *The Phoenix Project* e *The Design of Everyday Things*.
+- **Obras do Leitor:** não têm tags de leitores, e a Open Library muitas vezes não conhece a Edição brasileira (o ISBN de *SQL para Análise de Dados* dá 404). O Gênero vem das categorias BISAC da Edição do Google Books escolhida: `registrar_resolucao` (§7.2) as grava em `obra_tag` como `google:<categoria>`, com `contagem = 0`, e liga a Obra aos Gêneros com `forca = 1`. O mapa fica em `catalogo/categorias_google.yaml` e vale pelo prefixo mais longo ("Fiction / Fantasy / Epic" → Fantasia). Tecnologia é só `Computers`, porque `Technology & Engineering` é engenharia em geral; "Fiction" sozinho não dá Gênero. O `mapear-generos` refaz esses Gêneros, e a regra de Biografias e memórias vale para eles. As Obras do Leitor gravadas antes da regra ganham as categorias uma vez, pelo comando `generos-do-leitor`, que pede ao Google Books só o volume da Edição que elas já têm (decisão do Leitor, 26/11/2026).
 - As Obras `origem='open_library'` entram em Tecnologia pelo `carregar-tecnicas`, com `forca = 1`, e também as do Leitor cuja work é técnica (§8.8, passo 7). Os assuntos da Open Library têm `contagem = 0` e não refariam essa linha, então o `mapear-generos` preserva a Tecnologia de toda Obra que não é da Base. A regra de Biografias e memórias vale para todas.
 
 ---

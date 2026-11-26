@@ -16,6 +16,7 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.busca import buscar_no_catalogo
 from recomendador.catalogo.fontes import FonteIndisponivel
 from recomendador.catalogo.fontes.open_library import EdicaoOL, ObraOL, OpenLibrary
+from recomendador.catalogo.generos import registrar_categorias
 from recomendador.catalogo.texto import chave_do_autor, normalizar, sobrenome, titulo_sem_ruido
 from recomendador.catalogo.tipos import Candidata, ObraProposta, Resolucao, ResultadoBusca
 
@@ -357,4 +358,6 @@ def registrar_resolucao(
     if edicao.idioma == "pt" or (edicao_ol is not None and "por" in edicao_ol.idiomas):
         # O filtro de idioma de "Para você" (R10, SPEC §8.6).
         conn.execute(text("UPDATE obra SET tem_edicao_pt = true WHERE id = :o"), {"o": obra_id})
+    # A Obra do Leitor não tem tags de leitores: o Gênero vem das categorias da Edição (§6.3).
+    registrar_categorias(conn, obra_id, edicao.categorias)
     return ObraRegistrada(obra_id, edicao_id)

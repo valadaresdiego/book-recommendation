@@ -104,6 +104,22 @@ def mapear_generos() -> None:
         mapear(conn)
 
 
+@app.command("generos-do-leitor")
+def generos_do_leitor() -> None:
+    """Dá às Obras do Leitor de antes da regra os Gêneros das categorias do Google Books da
+    Edição que já têm (SPEC §6.3). Só pede ao Google as que ainda não têm categorias."""
+    from recomendador.catalogo.fontes.google_books import GoogleBooks
+    from recomendador.config import config
+    from recomendador.pipeline.generos import categorias_das_edicoes_do_leitor
+
+    google = GoogleBooks(config().google_books_api_key, timeout=10)
+    try:
+        with _engine().begin() as conn:
+            categorias_das_edicoes_do_leitor(conn, google)
+    finally:
+        google.fechar()
+
+
 @app.command("carregar-tecnicas")
 def carregar_tecnicas(
     dumps: Annotated[

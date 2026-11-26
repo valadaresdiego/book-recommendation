@@ -1,7 +1,8 @@
 """Cliente da busca do Google Books (R1, SPEC §5 e §7.1).
 
 Os termos do Google não permitem cópia permanente: o que vem daqui serve à busca e, quando o
-Leitor escolhe uma Edição, só os dados dela (com a capa por URL) vão para `edicao`.
+Leitor escolhe uma Edição, só os dados dela vão para o banco: a Edição (com a capa por URL)
+em `edicao` e, numa Obra do Leitor, as categorias em `obra_tag` (SPEC §6.3).
 """
 
 import re
@@ -16,10 +17,11 @@ from recomendador.catalogo.tipos import ResultadoBusca
 URL = "https://www.googleapis.com/books/v1/volumes"
 MAX_RESULTADOS = 20
 # Só os campos usados: a resposta fica bem menor.
-_CAMPOS = (
-    "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,"
-    "industryIdentifiers,imageLinks,language))"
+_CAMPOS_DO_VOLUME = (
+    "id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,"
+    "industryIdentifiers,imageLinks,language,categories)"
 )
+_CAMPOS = f"items({_CAMPOS_DO_VOLUME})"
 _RE_ANO = re.compile(r"^(\d{4})")
 
 
@@ -68,6 +70,9 @@ def _resultado(item: dict) -> ResultadoBusca | None:
         editora=(v.get("publisher") or "").strip() or None,
         idioma=idioma,
         descricao=(v.get("description") or "").strip() or None,
+        categorias=tuple(
+            c.strip() for c in v.get("categories") or [] if isinstance(c, str) and c.strip()
+        ),
     )
 
 
@@ -87,6 +92,22 @@ class GoogleBooks:
     def fechar(self) -> None:
         self._http.close()
 
+    def _get(self, url: str, params: dict) -> dict:
+        if self._chave:
+            params["key"] = self._chave
+        try:
+            resposta = self._http.get(url, params=params)
+        except httpx.HTTPError as e:
+            # Sem a URL na mensagem: ela leva a chave da API.
+            raise FonteIndisponivel(f"Google Books: {e.__class__.__name__}") from None
+        if resposta.status_code != 200:
+            raise FonteIndisponivel(f"Google Books: HTTP {resposta.status_code}")
+        try:
+            dados = resposta.json()
+        except ValueError as e:
+            raise FonteIndisponivel("Google Books: resposta inválida") from e
+        return dados if isinstance(dados, dict) else {}
+
     def buscar(self, texto: str) -> list[ResultadoBusca]:
         params = {
             "q": montar_q(texto),
@@ -94,17 +115,9 @@ class GoogleBooks:
             "printType": "books",
             "fields": _CAMPOS,
         }
-        if self._chave:
-            params["key"] = self._chave
-        try:
-            resposta = self._http.get(URL, params=params)
-        except httpx.HTTPError as e:
-            # Sem a URL na mensagem: ela leva a chave da API.
-            raise FonteIndisponivel(f"Google Books: {e.__class__.__name__}") from None
-        if resposta.status_code != 200:
-            raise FonteIndisponivel(f"Google Books: HTTP {resposta.status_code}")
-        try:
-            itens = resposta.json().get("items") or []
-        except ValueError as e:
-            raise FonteIndisponivel("Google Books: resposta inválida") from e
+        itens = self._get(URL, params).get("items") or []
         return [r for i in itens if isinstance(i, dict) and (r := _resultado(i))]
+
+    def volume(self, volume_id: str) -> ResultadoBusca | None:
+        """A Edição de um volume já escolhido (as categorias das Edições gravadas antes)."""
+        return _resultado(self._get(f"{URL}/{volume_id}", {"fields": _CAMPOS_DO_VOLUME}))
