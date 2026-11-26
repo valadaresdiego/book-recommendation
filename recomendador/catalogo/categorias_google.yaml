@@ -1,0 +1,36 @@
+# Categorias do Google Books (BISAC) → Gênero das Obras do Leitor (SPEC §6.3).
+# A Obra do Leitor não tem tags de leitores; o Gênero vem das categorias da Edição escolhida.
+# Vale o prefixo mais longo que casa ("Fiction / Fantasy / Epic" → fantasia). Uma categoria
+# sem prefixo aqui não dá Gênero: "Fiction" sozinho não diz qual é.
+# Tecnologia é só "Computers": "Technology & Engineering" é engenharia em geral, e uma
+# biografia sobre tecnologia (Steve Jobs) fica em Biografias.
+computers: tecnologia
+business & economics: negocios-autoajuda
+self-help: negocios-autoajuda
+psychology: ciencia
+science: ciencia
+mathematics: ciencia
+nature: ciencia
+history: historia
+biography & autobiography: biografias
+philosophy: filosofia-religiao
+religion: filosofia-religiao
+body, mind & spirit: filosofia-religiao
+poetry: poesia
+comics & graphic novels: quadrinhos
+juvenile fiction: infantil
+juvenile nonfiction: infantil
+young adult fiction: jovem-adulto
+young adult nonfiction: jovem-adulto
+fiction / fantasy: fantasia
+fiction / science fiction: ficcao-cientifica
+fiction / dystopian: ficcao-cientifica
+fiction / horror: terror
+fiction / thrillers: suspense
+fiction / suspense: suspense
+fiction / mystery & detective: misterio
+fiction / romance: romance-amoroso
+fiction / historical: ficcao-historica
+fiction / classics: classicos
+fiction / literary: ficcao-contemporanea
+fiction / general: ficcao-contemporanea

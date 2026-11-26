@@ -5,7 +5,15 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, text
 
-from recomendador.catalogo.generos import SLUG_BIOGRAFIAS, SLUG_TECNOLOGIA
+from recomendador.catalogo.fontes import FonteIndisponivel
+from recomendador.catalogo.fontes.google_books import GoogleBooks
+from recomendador.catalogo.generos import (
+    PREFIXO_CATEGORIA,
+    SLUG_BIOGRAFIAS,
+    SLUG_TECNOLOGIA,
+    gravar_generos_das_categorias,
+    registrar_categorias,
+)
 
 log = logging.getLogger(__name__)
 
@@ -71,10 +79,12 @@ def mapear_generos(conn: Connection) -> ResumoGeneros:
 
     A Tecnologia das Obras que não são da Base fica: o `carregar-tecnicas` a grava com
     força 1 pelos assuntos da Open Library, que têm contagem 0 e não a refariam (§8.8).
+    As Obras do Leitor ganham os Gêneros das categorias do Google Books, com força 1.
     Uma Obra de Biografias e memórias sai de Tecnologia (§6.3).
     """
     conn.execute(_APAGAR, {"tecnologia": SLUG_TECNOLOGIA})
     conn.execute(_MAPEAR, {"minima": FORCA_MINIMA})
+    gravar_generos_das_categorias(conn)
     conn.execute(_SEM_BIOGRAFIAS, {"tecnologia": SLUG_TECNOLOGIA, "biografias": SLUG_BIOGRAFIAS})
 
     obras = conn.execute(text("SELECT count(*) FROM obra")).scalar_one()
@@ -101,3 +111,38 @@ def mapear_generos(conn: Connection) -> ResumoGeneros:
             100 * COBERTURA_ESPERADA,
         )
     return resumo
+
+
+def categorias_das_edicoes_do_leitor(conn: Connection, google: GoogleBooks) -> int:
+    """Busca no Google Books as categorias das Edições já gravadas das Obras do Leitor que
+    ainda não têm nenhuma (as de antes desta regra) e liga as Obras aos Gêneros delas.
+
+    Devolve quantas Obras ganharam categorias. Para se o Google Books cair no meio.
+    """
+    pendentes = conn.execute(
+        text(
+            """
+            SELECT DISTINCT ON (o.id) o.id, e.google_volume_id
+            FROM obra o JOIN edicao e ON e.obra_id = o.id
+            WHERE o.origem = 'leitor' AND e.google_volume_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM obra_tag t
+                              WHERE t.obra_id = o.id AND t.tag LIKE :prefixo)
+            ORDER BY o.id, e.id DESC
+            """
+        ),
+        {"prefixo": PREFIXO_CATEGORIA + "%"},
+    ).all()
+    com_categorias = 0
+    for obra_id, volume_id in pendentes:
+        try:
+            volume = google.volume(volume_id)
+        except FonteIndisponivel as e:
+            log.warning("Google Books indisponível; as outras Obras ficam para depois: %s", e)
+            break
+        if volume is not None and volume.categorias:
+            registrar_categorias(conn, obra_id, volume.categorias)
+            com_categorias += 1
+    log.info(
+        "Obras do Leitor com categorias do Google Books: %d de %d", com_categorias, len(pendentes)
+    )
+    return com_categorias

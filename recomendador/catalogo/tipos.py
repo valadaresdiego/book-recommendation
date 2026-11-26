@@ -26,6 +26,7 @@ class ResultadoBusca:
     idioma: str | None = None  # ISO 639-1 (pt, en...)
     descricao: str | None = None
     titulo_obra: str | None = None  # `titulo_exibicao` da Obra, quando difere do da Edição
+    categorias: tuple[str, ...] = ()  # BISAC do Google Books ("Computers / Data Science")
 
     @property
     def no_catalogo(self) -> bool:

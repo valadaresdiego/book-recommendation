@@ -8,10 +8,14 @@ from sqlalchemy import Connection, text
 from recomendador.catalogo.generos import (
     ARQUIVO_GENEROS,
     SLUG_TECNOLOGIA,
+    generos_das_categorias,
+    ler_categorias,
     ler_generos,
+    registrar_categorias,
     sincronizar_generos,
 )
-from recomendador.pipeline.generos import mapear_generos
+from recomendador.catalogo.tipos import ResultadoBusca
+from recomendador.pipeline.generos import categorias_das_edicoes_do_leitor, mapear_generos
 
 
 def _yaml(tmp_path: Path, conteudo: str) -> Path:
@@ -156,3 +160,112 @@ def test_mapear_mantem_a_tecnologia_das_obras_da_open_library(conexao: Connectio
 
     assert _forcas(conexao, da_ol) == {SLUG_TECNOLOGIA: 1.0}
     assert _forcas(conexao, do_leitor) == {SLUG_TECNOLOGIA: 1.0}
+
+
+# --- Gênero das Obras do Leitor pelas categorias do Google Books (SPEC §6.3) ---
+
+
+@pytest.mark.parametrize(
+    ("categorias", "esperado"),
+    [
+        (["Computers / Data Science / Data Warehousing"], {"tecnologia"}),
+        (["Business & Economics / Time Management", "Self-Help / General"], {"negocios-autoajuda"}),
+        (
+            ["Business & Economics / Decision-Making", "Psychology / Cognitive Psychology"],
+            {"negocios-autoajuda", "ciencia"},
+        ),
+        (["Fiction / Fantasy / Epic"], {"fantasia"}),  # o prefixo mais longo vence
+        (["FICTION / science fiction / General"], {"ficcao-cientifica"}),
+        (["Fiction"], set()),  # "Fiction" sozinho não diz o Gênero
+        (["Technology & Engineering / Civil / General"], set()),  # engenharia não é Tecnologia
+        # Steve Jobs: biografia sobre tecnologia não é técnica.
+        (
+            ["Biography & Autobiography / Science & Technology", "Computers / History"],
+            {"biografias"},
+        ),
+        ([], set()),
+    ],
+)
+def test_generos_das_categorias(categorias: list[str], esperado: set[str]) -> None:
+    assert generos_das_categorias(categorias) == esperado
+
+
+def test_mapa_de_categorias_so_aponta_para_generos_da_lista() -> None:
+    slugs = {g.slug for g in ler_generos()}
+    assert set(ler_categorias().values()) <= slugs
+
+
+def test_categorias_dao_genero_so_a_obra_do_leitor(conexao: Connection) -> None:
+    sincronizar_generos(conexao)
+    do_leitor = _obra_com_tags(conexao, {"assunto da ol": 0}, origem="leitor")
+    da_base = _obra_com_tags(conexao, {"fantasy": 100})
+
+    registrar_categorias(conexao, do_leitor, ("Computers / Data Science / General",))
+    registrar_categorias(conexao, da_base, ("Computers / Programming / General",))
+
+    assert _forcas(conexao, do_leitor) == {SLUG_TECNOLOGIA: 1.0}
+    assert SLUG_TECNOLOGIA not in _forcas(conexao, da_base)
+    tags = conexao.execute(
+        text("SELECT tag, contagem FROM obra_tag WHERE obra_id = :o ORDER BY tag"), {"o": do_leitor}
+    ).all()
+    assert [tuple(t) for t in tags] == [
+        ("assunto da ol", 0),
+        ("google:computers / data science / general", 0),
+    ]
+    # A Obra da Base fica só com as tags de leitores: nada do Google vai para ela.
+    assert (
+        conexao.execute(
+            text("SELECT count(*) FROM obra_tag WHERE obra_id = :o AND tag LIKE 'google:%'"),
+            {"o": da_base},
+        ).scalar_one()
+        == 0
+    )
+
+
+def test_mapear_refaz_o_genero_das_categorias(conexao: Connection) -> None:
+    sincronizar_generos(conexao)
+    obra = _obra_com_tags(conexao, {"assunto da ol": 0}, origem="leitor")
+    registrar_categorias(
+        conexao, obra, ("Business & Economics / Decision-Making", "Psychology / Cognitive")
+    )
+
+    mapear_generos(conexao)
+
+    assert _forcas(conexao, obra) == {"negocios-autoajuda": 1.0, "ciencia": 1.0}
+
+
+class _GoogleFalso:
+    def __init__(self, categorias: dict[str, tuple[str, ...]]) -> None:
+        self.categorias = categorias
+        self.pedidos: list[str] = []
+
+    def volume(self, volume_id: str) -> ResultadoBusca | None:
+        self.pedidos.append(volume_id)
+        return ResultadoBusca(
+            titulo="x", autores=(), ano=None, capa_url=None, categorias=self.categorias[volume_id]
+        )
+
+
+def _edicao(conexao: Connection, obra_id: int, volume: str) -> None:
+    conexao.execute(
+        text("INSERT INTO edicao (obra_id, google_volume_id, titulo) VALUES (:o, :v, 'x')"),
+        {"o": obra_id, "v": volume},
+    )
+
+
+def test_categorias_das_edicoes_do_leitor_ja_gravadas(conexao: Connection) -> None:
+    """As Obras do Leitor de antes desta regra ganham o Gênero uma vez, pela Edição do
+    Google Books que já têm; a que já tem categorias não pede de novo."""
+    sincronizar_generos(conexao)
+    sql = _obra_com_tags(conexao, {"x": 0}, origem="leitor")
+    _edicao(conexao, sql, "yhp9EAAAQBAJ")
+    ja_feita = _obra_com_tags(conexao, {"google:computers": 0}, origem="leitor")
+    _edicao(conexao, ja_feita, "outro")
+    da_base = _obra_com_tags(conexao, {"fantasy": 10})
+    _edicao(conexao, da_base, "da-base")
+    gb = _GoogleFalso({"yhp9EAAAQBAJ": ("Computers / Data Science / General",)})
+
+    assert categorias_das_edicoes_do_leitor(conexao, gb) == 1
+
+    assert gb.pedidos == ["yhp9EAAAQBAJ"]
+    assert _forcas(conexao, sql) == {SLUG_TECNOLOGIA: 1.0}
