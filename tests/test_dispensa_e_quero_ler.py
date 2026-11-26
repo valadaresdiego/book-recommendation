@@ -1,7 +1,7 @@
 """Dispensa (R7) e Quero ler (R8), da fase 4 (SPEC §8.6), contra o banco real."""
 
 import pytest
-from fabricas import criar_edicao, criar_obra
+from fabricas import criar_edicao, criar_genero, criar_obra, ligar_genero
 from sqlalchemy import Connection, text
 
 from recomendador.config import LEITOR_ID
@@ -177,6 +177,23 @@ def test_tirar_de_quero_ler(conexao, duna) -> None:
     salvar_quero_ler(conexao, LEITOR_ID, duna)
     tirar_de_quero_ler(conexao, LEITOR_ID, duna)
     assert listar_quero_ler(conexao, LEITOR_ID) == []
+
+
+def test_quero_ler_marca_as_obras_tecnicas(conexao, duna) -> None:
+    """Uma Obra do Gênero "Tecnologia" vai para a aba própria de Quero ler."""
+    tecnologia = criar_genero(conexao, "tecnologia", "Tecnologia")
+    ficcao = criar_genero(conexao, "ficcao-cientifica", "Ficção científica")
+    ligar_genero(conexao, duna, ficcao)
+    ddd = criar_obra(conexao, "Domain-Driven Design", ("Eric Evans",), origem="open_library")
+    ligar_genero(conexao, ddd, tecnologia)
+    salvar_quero_ler(conexao, LEITOR_ID, duna)
+    salvar_quero_ler(conexao, LEITOR_ID, ddd)
+
+    assert {q.obra_id: q.tecnica for q in listar_quero_ler(conexao, LEITOR_ID)} == {
+        duna: False,
+        ddd: True,
+    }
+    assert quero_ler_da_obra(conexao, LEITOR_ID, ddd).tecnica
 
 
 def test_a_lista_de_para_voce_vai_nos_eventos_do_o2(conexao, duna, fundacao) -> None:
