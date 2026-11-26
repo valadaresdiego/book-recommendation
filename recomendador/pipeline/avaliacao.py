@@ -7,6 +7,11 @@ com as Notas de teste. A semente fixa (42) torna tudo reprodutível.
 A Coleitura avaliada nunca é a gravada em `vizinho`: ela é recalculada, com os parâmetros
 da execução, só sobre as Notas de treino (§9.1). Senão as Notas de teste vazariam para os
 Vizinhos. O conteúdo não usa Notas e é lido do banco.
+
+O NDCG@20 e o Recall@20 vêm com um intervalo de confiança de 95 % por bootstrap sobre os
+leitores (§9.3). Duas configurações são comparadas pela diferença pareada: o NDCG@20 de
+cada leitor numa menos o da outra, com o IC dessa diferença. Se o IC contém o zero, a
+diferença não se distingue do acaso da amostra de leitores.
 """
 
 import csv
@@ -37,7 +42,9 @@ log = logging.getLogger(__name__)
 
 N = 20
 SEMENTE = 42
+REAMOSTRAS = 1000  # do bootstrap (§9.3)
 _LEITORES_POR_BLOCO = 500
+_REAMOSTRAS_POR_BLOCO = 100
 
 # Calibração (SPEC §9.4). K e λ variam só a Coleitura: ela é recalculada sobre o treino,
 # enquanto o conteúdo usa os Vizinhos gravados da execução.
@@ -143,6 +150,42 @@ def recall(recomendadas: Sequence[int], relevantes: set[int], n: int = N) -> flo
     return len(set(recomendadas[:n]) & relevantes) / len(relevantes)
 
 
+def intervalo_bootstrap(
+    valores: Sequence[float] | np.ndarray,
+    reamostras: int = REAMOSTRAS,
+    semente: int = SEMENTE,
+    nivel: float = 0.95,
+) -> tuple[float, float]:
+    """O IC da média de `valores` (um por leitor) pelo bootstrap percentil: sorteia os
+    leitores com reposição `reamostras` vezes e toma os quantis das médias."""
+    v = np.asarray(valores, dtype=np.float64)
+    if v.size == 0:
+        raise ValueError("bootstrap sem nenhum valor")
+    rng = np.random.default_rng(semente)
+    medias = np.empty(reamostras)
+    for inicio in range(0, reamostras, _REAMOSTRAS_POR_BLOCO):
+        fim = min(inicio + _REAMOSTRAS_POR_BLOCO, reamostras)
+        medias[inicio:fim] = v[rng.integers(0, v.size, size=(fim - inicio, v.size))].mean(axis=1)
+    cauda = (1 - nivel) / 2
+    inferior, superior = np.quantile(medias, [cauda, 1 - cauda])
+    return float(inferior), float(superior)
+
+
+def diferenca_pareada(
+    a: Sequence[float] | np.ndarray, b: Sequence[float] | np.ndarray
+) -> dict[str, float | list[float]]:
+    """A diferença média `a − b` entre duas configurações medidas nos mesmos leitores, na
+    mesma ordem, e o IC de 95 % dela."""
+    d = np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)
+    return {"delta": float(d.mean()), "ic95": list(intervalo_bootstrap(d))}
+
+
+def distingue(diferenca: Mapping) -> bool:
+    """O IC da diferença não contém o zero."""
+    inferior, superior = diferenca["ic95"]
+    return inferior > 0 or superior < 0
+
+
 def top_n(
     pontos: np.ndarray, treino: sparse.csr_matrix, popularidade: np.ndarray, n: int = N
 ) -> list[list[int]]:
@@ -163,6 +206,22 @@ def top_n(
 
 
 # --- a amostra e a Coleitura do treino ---
+
+
+@dataclass(frozen=True)
+class _Medida:
+    """As métricas de uma configuração e as de cada leitor, na ordem de `_Amostra.leitores`,
+    para o IC e as diferenças pareadas."""
+
+    metricas: dict
+    ndcg: np.ndarray
+    recall: np.ndarray
+
+    def com_ic(self) -> dict:
+        return self.metricas | {
+            "ndcg@20_ic95": list(intervalo_bootstrap(self.ndcg)),
+            "recall@20_ic95": list(intervalo_bootstrap(self.recall)),
+        }
 
 
 class _Amostra:
@@ -195,17 +254,20 @@ class _Amostra:
         escalas = {t: escala(x[2] for x in v) for t, v in vizinhos.items()}
         return matriz_de_similaridade(vizinhos, self.indice, alfa, escalas)
 
-    def medir(self, tops: list[list[int]]) -> dict:
+    def medir(self, tops: list[list[int]]) -> _Medida:
         listas = [[int(self.ids[c]) for c in t] for t in tops]
         pares = list(zip(listas, self.testes, strict=True))
-        return {
-            "ndcg@20": float(np.mean([ndcg(r, t) for r, t in pares])),
-            "recall@20": float(np.mean([recall(r, t) for r, t in pares])),
+        ndcgs = np.array([ndcg(r, t) for r, t in pares])
+        recalls = np.array([recall(r, t) for r, t in pares])
+        metricas = {
+            "ndcg@20": float(ndcgs.mean()),
+            "recall@20": float(recalls.mean()),
             "cobertura": len({c for t in tops for c in t}) / len(self.indice),
             "leitores": len(self.leitores),
         }
+        return _Medida(metricas, ndcgs, recalls)
 
-    def popular(self) -> dict:
+    def popular(self) -> _Medida:
         """O baseline: as mais populares fora do treino."""
         tops: list[list[int]] = []
         for inicio in range(0, len(self.leitores), _LEITORES_POR_BLOCO):
@@ -216,7 +278,7 @@ class _Amostra:
 
     def avaliar(
         self, s: sparse.csr_matrix, betas: Iterable[float], tabela: str = "prd"
-    ) -> dict[float, dict]:
+    ) -> dict[float, _Medida]:
         """As métricas da pontuação com a similaridade `s`, para cada β."""
         betas = list(betas)
         tops: dict[float, list[list[int]]] = {b: [] for b in betas}
@@ -299,11 +361,17 @@ def avaliar(
       (em `metricas.combinada` das duas) e, com `varredura`, a calibração do §9.4.
     - `extras` acrescenta métricas por execução (o teste entre idiomas do bake-off).
     - As métricas principais usam o β de `config` (ou `beta`) e a tabela de pesos do PRD.
+    - Cada execução ganha o IC do NDCG@20 e do Recall@20, a diferença pareada para a
+      popularidade (`vs_popularidade`) e para as outras execuções do mesmo tipo avaliadas
+      junto (`pareada`, pelo id). A combinação ganha a diferença para cada isolada
+      (`vs_isoladas`) e para a melhor da varredura (`vs_melhor`), e cada linha da
+      varredura, a diferença para a melhor.
     """
     cfg = config()
     beta = cfg.beta_popularidade if beta is None else beta
     amostra = _Amostra(conn, divisao)
-    pop = amostra.popular()
+    medida_pop = amostra.popular()
+    pop = medida_pop.com_ic()
     log.info("Popularidade: NDCG@20 %.4f", pop["ndcg@20"])
     coleitura = (
         _ColeituraNoTreino(notas_de_treino(notas, divisao), amostra.indice)
@@ -332,47 +400,67 @@ def avaliar(
     resultado: dict[int, dict] = {}
     modelos: dict[int, str] = {}
     triplas_por_execucao: dict[int, list] = {}
+    medidas: dict[int, _Medida] = {}
+    tipos: dict[int, str] = {}
     for execucao in execucoes:
         tipo, _, triplas = vizinhos(execucao)
+        tipos[execucao] = tipo
         triplas_por_execucao[execucao] = triplas = list(triplas)
-        modelos[execucao] = conn.execute(
-            text("SELECT modelo FROM execucao_modelo WHERE id = :e"), {"e": execucao}
-        ).scalar_one()
+        modelos[execucao] = _modelo(conn, execucao)
         s = amostra.similaridade({tipo: triplas}, alfa=1.0 if tipo == "conteudo" else 0.0)
         por_beta = amostra.avaliar(s, sorted({*VARREDURA_BETA, beta}))
-        m = por_beta[beta] | (extras or {}).get(execucao, {})
+        medidas[execucao] = medida = por_beta[beta]
+        m = medida.com_ic() | (extras or {}).get(execucao, {})
         m |= {
             "beta": beta,
             "varredura_beta": {
-                str(b): {k: v[k] for k in _METRICAS} for b, v in sorted(por_beta.items())
+                str(b): {k: v.metricas[k] for k in _METRICAS} for b, v in sorted(por_beta.items())
             },
             "baseline_popularidade_ndcg@20": pop["ndcg@20"],
+            "vs_popularidade": diferenca_pareada(medida.ndcg, medida_pop.ndcg),
             "divisao": divisao.parametros,
             "avaliado_em": date.today().isoformat(),
         }
+        resultado[execucao] = m
+        log.info(
+            "Execução %d (%s): NDCG@20 %.4f [%.4f; %.4f]",
+            execucao, modelos[execucao], m["ndcg@20"], *m["ndcg@20_ic95"],
+        )  # fmt: skip
+
+    for execucao, m in resultado.items():
+        m["pareada"] = {
+            str(outra): diferenca_pareada(medidas[execucao].ndcg, medidas[outra].ndcg)
+            for outra in resultado
+            if outra != execucao and tipos[outra] == tipos[execucao]
+        }
         resultado[execucao] = _gravar(conn, execucao, m)
-        log.info("Execução %d (%s): NDCG@20 %.4f", execucao, modelos[execucao], m["ndcg@20"])
 
     combinada = None
     linhas: list[dict] = []
     if combinar:
         c, col = combinar
-        tipos = dict(
+        tipos_combinados = dict(
             conn.execute(
                 text("SELECT id, tipo::text FROM execucao_modelo WHERE id IN (:c, :l)"),
                 {"c": c, "l": col},
             ).all()
         )
-        if tipos.get(c) != "conteudo" or tipos.get(col) != "coleitura":
-            raise ValueError(f"combinar espera (conteúdo, Coleitura); veio {tipos}")
+        if tipos_combinados.get(c) != "conteudo" or tipos_combinados.get(col) != "coleitura":
+            raise ValueError(f"combinar espera (conteúdo, Coleitura); veio {tipos_combinados}")
         tc = triplas_por_execucao.get(c) or list(vizinhos(c)[2])
         tl = triplas_por_execucao.get(col) or list(vizinhos(col)[2])
         s = amostra.similaridade({"conteudo": tc, "coleitura": tl}, cfg.alfa)
-        combinada = amostra.avaliar(s, [beta])[beta] | {
+        medida_comb = amostra.avaliar(s, [beta])[beta]
+        combinada = medida_comb.com_ic() | {
             "conteudo": c,
             "coleitura": col,
             "alfa": cfg.alfa,
             "beta": beta,
+            "vs_isoladas": {
+                str(e): diferenca_pareada(medida_comb.ndcg, medidas[e].ndcg)
+                for e in combinar
+                if e in medidas
+            },
         }
         log.info(
             "Combinação %d + %d (α = %s): NDCG@20 %.4f", c, col, cfg.alfa, combinada["ndcg@20"]
@@ -380,8 +468,17 @@ def avaliar(
         if varredura:
             assert coleitura is not None
             minimo = _parametros_da_coleitura(_parametros(conn, col))[2]
-            linhas = _varrer(amostra, tc, coleitura, minimo)
-            combinada["melhor"] = max(linhas, key=lambda x: x["ndcg@20"])
+            linhas, ndcgs = _varrer(amostra, tc, coleitura, minimo)
+            i_melhor = max(range(len(linhas)), key=lambda i: linhas[i]["ndcg@20"])
+            for linha, ndcg_leitores in zip(linhas, ndcgs, strict=True):
+                d = diferenca_pareada(ndcg_leitores, ndcgs[i_melhor])
+                linha |= {
+                    "delta_vs_melhor": d["delta"],
+                    "delta_ic95_inferior": d["ic95"][0],
+                    "delta_ic95_superior": d["ic95"][1],
+                }
+            combinada["melhor"] = linhas[i_melhor]
+            combinada["vs_melhor"] = diferenca_pareada(medida_comb.ndcg, ndcgs[i_melhor])
         for e in combinar:
             resultado[e] = _gravar(conn, e, {"combinada": combinada})
             modelos.setdefault(e, _modelo(conn, e))
@@ -429,10 +526,11 @@ def _gravar(conn: Connection, execucao: int, m: dict) -> dict:
 
 def _varrer(
     amostra: _Amostra, conteudo: list, coleitura: _ColeituraNoTreino, min_coleitores: int
-) -> list[dict]:
+) -> tuple[list[dict], list[np.ndarray]]:
     """A grade do §9.4: α × β × K × λ × tabela de pesos. Com α = 1 a Coleitura não entra,
-    e K e λ não se aplicam."""
+    e K e λ não se aplicam. Devolve as linhas e o NDCG@20 de cada leitor em cada uma."""
     linhas = []
+    ndcgs = []
     for alfa in VARREDURA_ALFA:
         grade = (
             [(None, None)] if alfa == 1 else list(itertools.product(VARREDURA_K, VARREDURA_LAMBDA))
@@ -446,10 +544,11 @@ def _varrer(
                 for b, m in amostra.avaliar(s, VARREDURA_BETA, tabela).items():
                     linhas.append(
                         {"alfa": alfa, "beta": b, "k": k, "lambda": lam, "pesos": tabela}
-                        | {x: m[x] for x in _METRICAS}
+                        | {x: m.metricas[x] for x in _METRICAS}
                     )
+                    ndcgs.append(m.ndcg)
         log.info("Varredura: α = %s pronto", alfa)
-    return linhas
+    return linhas, ndcgs
 
 
 # --- relatório ---
@@ -461,6 +560,20 @@ def _br(x: float) -> str:
 
 def _num(x: float | None) -> str:
     return "—" if x is None else f"{x:g}".replace(".", ",")
+
+
+def _ic(intervalo: Sequence[float]) -> str:
+    return f"[{_br(intervalo[0])}; {_br(intervalo[1])}]"
+
+
+def _com_ic(m: Mapping, metrica: str = "ndcg@20") -> str:
+    return f"{_br(m[metrica])} {_ic(m[f'{metrica}_ic95'])}"
+
+
+def _delta(d: Mapping) -> str:
+    """A diferença com sinal e o IC; acrescenta ", empate" quando o IC contém o zero."""
+    sinal = "+" if d["delta"] >= 0 else "−"
+    return f"{sinal}{_br(abs(d['delta']))} {_ic(d['ic95'])}" + ("" if distingue(d) else ", empate")
 
 
 def _escrever_relatorio(
@@ -483,25 +596,46 @@ def _escrever_relatorio(
         f"Pontuação com β = {_num(beta)} (peso da popularidade, ADR 0006) e a tabela de "
         "pesos do PRD. A Coleitura é recalculada só com as Notas de treino.",
         "",
-        "| Execução | Modelo | NDCG@20 | Recall@20 | Cobertura | Extras |",
-        "|---|---|---|---|---|---|",
+        f"Entre colchetes, o IC de 95 % por bootstrap sobre os leitores ({REAMOSTRAS} "
+        "reamostras, §9.3). Uma diferença é pareada (os mesmos leitores nas duas "
+        "configurações) e é **empate** quando o IC dela contém o zero.",
+        "",
+        "| Execução | Modelo | NDCG@20 | Recall@20 | Cobertura | Δ NDCG@20 vs popularidade "
+        "| Extras |",
+        "|---|---|---|---|---|---|---|",
     ]
     base = (
         *("ndcg@20", "recall@20", "cobertura", "leitores", "divisao", "avaliado_em"),
-        *("beta", "varredura_beta", "combinada"),
+        *("beta", "varredura_beta", "combinada", "ndcg@20_ic95", "recall@20_ic95"),
+        *("vs_popularidade", "pareada"),
     )
     for e, m in sorted(isoladas.items(), key=lambda x: -x[1]["ndcg@20"]):
         extras = ", ".join(
             f"{k}: {v}" for k, v in m.items() if k not in base and not k.startswith("baseline")
         )
         linhas.append(
-            f"| {e} | `{modelos[e]}` | {_br(m['ndcg@20'])} | {_br(m['recall@20'])} "
-            f"| {_br(m['cobertura'])} | {extras} |"
+            f"| {e} | `{modelos[e]}` | {_com_ic(m)} | {_com_ic(m, 'recall@20')} "
+            f"| {_br(m['cobertura'])} | {_delta(m['vs_popularidade'])} | {extras} |"
         )
     linhas.append(
-        f"| — | Popularidade (baseline) | {_br(pop['ndcg@20'])} | {_br(pop['recall@20'])} "
-        f"| {_br(pop['cobertura'])} | |"
+        f"| — | Popularidade (baseline) | {_com_ic(pop)} | {_com_ic(pop, 'recall@20')} "
+        f"| {_br(pop['cobertura'])} | | |"
     )
+    pares = [
+        (e, int(outra), d)
+        for e, m in sorted(isoladas.items())
+        for outra, d in m.get("pareada", {}).items()
+        if e < int(outra)
+    ]
+    if pares:
+        linhas += [
+            "",
+            "## Diferenças pareadas entre execuções do mesmo tipo",
+            "",
+            "| Execução | Menos a execução | Δ NDCG@20 |",
+            "|---|---|---|",
+            *(f"| {e} | {outra} | {_delta(d)} |" for e, outra, d in pares),
+        ]
     if isoladas:
         betas = sorted(next(iter(isoladas.values()))["varredura_beta"], key=float)
         linhas += [
@@ -539,7 +673,7 @@ def _secao_combinada(combinada: dict, isoladas: dict[int, dict], varredura: list
         f"## Combinação: conteúdo {c} + Coleitura {col}",
         "",
         f"Com α = {_num(alfa)} (config) e β = {_num(combinada['beta'])}: NDCG@20 "
-        f"{_br(combinada['ndcg@20'])}, Recall@20 {_br(combinada['recall@20'])}, "
+        f"{_com_ic(combinada)}, Recall@20 {_com_ic(combinada, 'recall@20')}, "
         f"cobertura {_br(combinada['cobertura'])}.",
     ]
     if melhor_isolada is not None:
@@ -547,6 +681,13 @@ def _secao_combinada(combinada: dict, isoladas: dict[int, dict], varredura: list
         linhas.append(
             f"Critério do §14 (combinado ≥ melhor isolado, {_br(melhor_isolada)}): "
             f"{'cumprido' if passou else 'não cumprido'}."
+        )
+    for e, d in combinada.get("vs_isoladas", {}).items():
+        linhas.append(f"- Δ NDCG@20 da combinação menos a execução {e}: {_delta(d)}.")
+    if "vs_melhor" in combinada:
+        linhas.append(
+            f"- Δ NDCG@20 da combinação menos a melhor da varredura: "
+            f"{_delta(combinada['vs_melhor'])}."
         )
     if not varredura:
         return linhas
@@ -568,17 +709,33 @@ def _secao_combinada(combinada: dict, isoladas: dict[int, dict], varredura: list
         f"**Melhor NDCG@20:** {_br(m['ndcg@20'])} com α = {_num(m['alfa'])}, "
         f"β = {_num(m['beta'])}, K = {_num(m['k'])}, λ = {_num(m['lambda'])}, pesos "
         f"`{m['pesos']}` (cobertura {_br(m['cobertura'])}).",
+    ]
+
+    def vs_melhor(x: dict) -> dict:
+        return {
+            "delta": x["delta_vs_melhor"],
+            "ic95": [x["delta_ic95_inferior"], x["delta_ic95_superior"]],
+        }
+
+    if "delta_vs_melhor" in m:
+        empatadas = sum(not distingue(vs_melhor(x)) for x in varredura) - 1
+        linhas.append(
+            f"{empatadas} das outras {len(varredura) - 1} configurações empatam com a melhor "
+            "(o IC da diferença pareada contém o zero)."
+        )
+    linhas += [
         "",
         "As 10 melhores:",
         "",
-        "| α | β | K | λ | Pesos | NDCG@20 | Recall@20 | Cobertura |",
-        "|---|---|---|---|---|---|---|---|",
+        "| α | β | K | λ | Pesos | NDCG@20 | Recall@20 | Cobertura | Δ vs a melhor |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for x in sorted(varredura, key=lambda x: -x["ndcg@20"])[:10]:
+        delta = _delta(vs_melhor(x)) if x is not m and "delta_vs_melhor" in x else "—"
         linhas.append(
             f"| {_num(x['alfa'])} | {_num(x['beta'])} | {_num(x['k'])} | {_num(x['lambda'])} "
             f"| {x['pesos']} | {_br(x['ndcg@20'])} | {_br(x['recall@20'])} "
-            f"| {_br(x['cobertura'])} |"
+            f"| {_br(x['cobertura'])} | {delta} |"
         )
 
     # α × β, com o K e o λ do melhor e os pesos do PRD.

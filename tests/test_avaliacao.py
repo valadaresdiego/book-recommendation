@@ -16,7 +16,10 @@ from recomendador.pipeline.avaliacao import (
     VARREDURA_LAMBDA,
     Divisao,
     avaliar,
+    diferenca_pareada,
+    distingue,
     dividir,
+    intervalo_bootstrap,
     ndcg,
     notas_de_treino,
     recall,
@@ -43,6 +46,57 @@ def test_ndcg_contra_valor_conhecido() -> None:
 def test_recall() -> None:
     assert recall([10, 20, 30], {20, 40}) == 0.5
     assert recall([], {1}) == 0.0
+
+
+# --- intervalo de confiança ---
+
+
+def test_intervalo_bootstrap_contem_a_media_e_e_reprodutivel() -> None:
+    valores = np.random.default_rng(1).random(400)
+
+    inferior, superior = intervalo_bootstrap(valores)
+
+    assert inferior < valores.mean() < superior
+    assert intervalo_bootstrap(valores) == (inferior, superior)  # semente fixa
+    # O erro padrão da média de U(0, 1) com 400 valores é ~0,0144: o IC tem ~4 deles.
+    assert 0.04 < superior - inferior < 0.07
+    assert intervalo_bootstrap([0.3] * 50) == pytest.approx((0.3, 0.3))
+    with pytest.raises(ValueError):
+        intervalo_bootstrap([])
+
+
+def test_intervalo_estreita_com_mais_leitores() -> None:
+    rng = np.random.default_rng(2)
+    poucos, muitos = rng.random(100), rng.random(2000)
+    largura = [s - i for i, s in (intervalo_bootstrap(poucos), intervalo_bootstrap(muitos))]
+    assert largura[1] < largura[0]
+
+
+def test_diferenca_pareada_ve_o_que_os_ics_separados_nao_veem() -> None:
+    """Leitores muito diferentes entre si, e a configuração A ganha 0,01 de cada um: os ICs
+    de A e de B se sobrepõem, mas a diferença pareada é clara."""
+    b = np.random.default_rng(3).random(500)
+    a = b + 0.01
+
+    ic_a, ic_b = intervalo_bootstrap(a), intervalo_bootstrap(b)
+    d = diferenca_pareada(a, b)
+
+    assert ic_a[0] < ic_b[1]  # os ICs isolados se sobrepõem
+    assert d["delta"] == pytest.approx(0.01)
+    assert d["ic95"] == pytest.approx([0.01, 0.01])
+    assert distingue(d)
+
+
+def test_diferenca_pareada_empata_quando_o_ic_contem_o_zero() -> None:
+    rng = np.random.default_rng(4)
+    b = rng.random(300)
+    a = b + rng.normal(0, 0.1, size=300) - 0.0001
+
+    d = diferenca_pareada(a, b)
+
+    assert d["ic95"][0] < 0 < d["ic95"][1]
+    assert not distingue(d)
+    assert diferenca_pareada(b, b) == {"delta": 0.0, "ic95": [0.0, 0.0]}
 
 
 # --- pontuação ---
@@ -217,6 +271,56 @@ def test_avaliar_grava_metricas_e_compara_com_a_popularidade(conexao: Connection
     assert "Popularidade" in relatorio and f"| {execucao} |" in relatorio
 
 
+def test_avaliar_grava_o_ic_e_a_diferenca_para_a_popularidade(
+    conexao: Connection, tmp_path
+) -> None:
+    _, execucao, notas = _catalogo_em_grupos(conexao)
+    divisao = dividir(notas, n_leitores=50, min_notas=20, frac_teste=0.2, semente=42)
+
+    r = avaliar(conexao, [execucao], divisao, pasta_relatorios=tmp_path)
+
+    m = r.metricas[execucao]
+    for metrica in ("ndcg@20", "recall@20"):
+        inferior, superior = m[f"{metrica}_ic95"]
+        assert inferior <= m[metrica] <= superior
+        assert r.popularidade[f"{metrica}_ic95"][0] <= r.popularidade[metrica]
+    d = m["vs_popularidade"]
+    assert d["delta"] == pytest.approx(m["ndcg@20"] - r.popularidade["ndcg@20"])
+    assert distingue(d) and d["ic95"][0] > 0  # o conteúdo ganha de verdade
+    assert m["pareada"] == {}  # nenhuma outra execução do mesmo tipo
+    gravadas = conexao.execute(
+        text("SELECT metricas FROM execucao_modelo WHERE id = :e"), {"e": execucao}
+    ).scalar_one()
+    assert gravadas["ndcg@20_ic95"] == pytest.approx(m["ndcg@20_ic95"])
+    relatorio = r.relatorio.read_text(encoding="utf-8")
+    assert "Δ NDCG@20 vs popularidade" in relatorio and "IC de 95 %" in relatorio
+
+
+def test_execucoes_do_mesmo_tipo_ganham_a_diferenca_pareada(conexao: Connection, tmp_path) -> None:
+    """Uma cópia da execução de conteúdo empata com ela."""
+    _, execucao, notas = _catalogo_em_grupos(conexao)
+    copia = conexao.execute(
+        text("INSERT INTO execucao_modelo (tipo, modelo) VALUES ('conteudo', 'y') RETURNING id")
+    ).scalar_one()
+    conexao.execute(
+        text(
+            "INSERT INTO vizinho SELECT :c, obra_id, vizinho_id, similaridade, posicao "
+            "FROM vizinho WHERE execucao_id = :e"
+        ),
+        {"c": copia, "e": execucao},
+    )
+    divisao = dividir(notas, n_leitores=50, min_notas=20, semente=42)
+
+    r = avaliar(conexao, [execucao, copia], divisao, pasta_relatorios=tmp_path)
+
+    d = r.metricas[execucao]["pareada"][str(copia)]
+    assert d == {"delta": 0.0, "ic95": [0.0, 0.0]} and not distingue(d)
+    assert set(r.metricas[copia]["pareada"]) == {str(execucao)}
+    relatorio = r.relatorio.read_text(encoding="utf-8")
+    assert "## Diferenças pareadas" in relatorio
+    assert f"| {min(execucao, copia)} | {max(execucao, copia)} | +0,0000" in relatorio
+
+
 def test_beta_multiplica_pela_popularidade_sem_mudar_o_sinal() -> None:
     indice = {"A": 0, "B": 1, "C": 2}
     s = matriz_de_similaridade({"conteudo": [("A", "B", 0.5), ("A", "C", 0.5)]}, indice, 1.0)
@@ -275,6 +379,36 @@ def test_combinacao_e_varredura(conexao: Connection, tmp_path) -> None:
     relatorio = r.relatorio.read_text(encoding="utf-8")
     assert "## Combinação" in relatorio and "Critério do §14" in relatorio
     assert list(tmp_path.glob("varredura-*.csv"))
+
+
+def test_combinacao_e_varredura_comparadas_pela_diferenca_pareada(
+    conexao: Connection, tmp_path
+) -> None:
+    _, conteudo, notas = _catalogo_em_grupos(conexao)
+    coleitura = _coleitura_sem_vizinhos(conexao)
+    divisao = dividir(notas, n_leitores=50, min_notas=20, semente=42)
+
+    r = avaliar(
+        conexao, [conteudo, coleitura], divisao, tmp_path, notas=notas,
+        combinar=(conteudo, coleitura),
+    )  # fmt: skip
+
+    assert r.combinada is not None
+    c = r.combinada
+    assert c["ndcg@20_ic95"][0] <= c["ndcg@20"] <= c["ndcg@20_ic95"][1]
+    for e in (conteudo, coleitura):
+        d = c["vs_isoladas"][str(e)]
+        assert d["delta"] == pytest.approx(c["ndcg@20"] - r.metricas[e]["ndcg@20"])
+    assert c["vs_melhor"]["delta"] == pytest.approx(c["ndcg@20"] - c["melhor"]["ndcg@20"])
+    assert c["melhor"]["delta_vs_melhor"] == 0.0
+    for x in r.varredura:
+        assert x["delta_vs_melhor"] == pytest.approx(x["ndcg@20"] - c["melhor"]["ndcg@20"])
+        assert x["delta_ic95_inferior"] <= x["delta_vs_melhor"] <= x["delta_ic95_superior"]
+    csv = next(tmp_path.glob("varredura-*.csv")).read_text(encoding="utf-8")
+    assert "delta_vs_melhor,delta_ic95_inferior,delta_ic95_superior" in csv.splitlines()[0]
+    relatorio = r.relatorio.read_text(encoding="utf-8")
+    assert "empatam com a melhor" in relatorio and "Δ vs a melhor" in relatorio
+    assert "menos a melhor da varredura" in relatorio
 
 
 def test_combinar_confere_os_tipos(conexao: Connection, tmp_path) -> None:
