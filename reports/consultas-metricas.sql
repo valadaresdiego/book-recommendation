@@ -6,10 +6,15 @@
 \set leitor '''00000000-0000-0000-0000-000000000001'''
 
 -- Indicador rápido: Leituras com Nota na Estante, total e na 1ª semana de uso (meta ≥ 20).
+-- As Leituras importadas do Goodreads (SPEC §8.9) contam no total, mas não na 1ª semana nem
+-- no início de uso: elas não foram registradas no app.
 SELECT count(*) FILTER (WHERE nota IS NOT NULL) AS leituras_com_nota,
+       count(*) FILTER (WHERE nota IS NOT NULL AND origem = 'importacao') AS importadas_com_nota,
        count(*) FILTER (
            WHERE nota IS NOT NULL
-             AND criado_em < (SELECT min(criado_em) FROM leitura WHERE leitor_id = :leitor)
+             AND origem <> 'importacao'
+             AND criado_em < (SELECT min(criado_em) FROM leitura
+                              WHERE leitor_id = :leitor AND origem <> 'importacao')
                              + interval '7 days'
        ) AS com_nota_na_1a_semana
 FROM leitura

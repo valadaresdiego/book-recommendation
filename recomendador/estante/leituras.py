@@ -9,7 +9,7 @@ from sqlalchemy import Connection, text
 
 from recomendador.estante.eventos import registrar_evento
 
-OrigemLeitura = Literal["busca", "montagem", "sugestao", "manual", "catalogo"]
+OrigemLeitura = Literal["busca", "montagem", "sugestao", "manual", "catalogo", "importacao"]
 OrdemEstante = Literal["nota", "data"]
 
 

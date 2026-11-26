@@ -566,3 +566,68 @@ def test_candidata_ja_em_quero_ler_avisa_com_o_titulo_dela(conexao: Connection) 
     assert at.warning[0].value == "Torto Arado já está na sua lista Quero ler"
     edicoes = conexao.execute(text("SELECT count(*) FROM edicao")).scalar_one()
     assert edicoes == 0
+
+
+# --- Importar (R9, SPEC §8.9) ---
+
+_CSV_GOODREADS = (
+    b"Title,Author,Additional Authors,ISBN,ISBN13,My Rating,Date Read,Date Added,Exclusive Shelf\n"
+    b'Dune,Frank Herbert,,"=""""","=""9780441013593""",5,2023/08/15,2023/08/01,read\n'
+    b'Um Livro Inexistente,Fulano de Tal,,"=""""","=""""",4,2022/05/05,2022/05/01,read\n'
+    b'Ulysses,James Joyce,,"=""""","=""""",0,,2021/02/02,did-not-finish\n'
+)
+
+
+def test_importar_mostra_o_envio_do_arquivo() -> None:
+    at = _pagina("importar").run()
+
+    assert not at.exception
+    assert len(at.get("file_uploader")) == 1
+
+
+def test_importar_da_previa_a_revisao(conexao: Connection) -> None:
+    dune = criar_obra(conexao, "Dune", ("Frank Herbert",), isbns=("9780441013593",))
+    previa = estante.preparar_importacao(
+        conexao, LEITOR_ID, estante.ler_goodreads(_CSV_GOODREADS), None
+    )
+    at = _pagina("importar")
+    at.session_state["importar-previa"] = previa
+    at.run()
+
+    assert not at.exception
+    assert [m.value for m in at.metric] == ["3", "1", "1", "1"]
+    [importar] = [b for b in at.button if b.label == "Importar"]
+    importar.click().run()
+
+    assert not at.exception
+    assert at.success[0].value == "Importação feita: 1 Leitura na Estante."
+    assert estante.leitura_da_obra(conexao, LEITOR_ID, dune).nota == 5
+    # A revisão mostra a linha sem correspondência, com "Nenhuma: é outra Obra" escolhida.
+    assert any("Um Livro Inexistente" in m.value for m in at.markdown)
+    [importar] = [b for b in at.button if b.label == "Importar"]
+    importar.click().run()
+
+    assert not at.exception
+    assert at.info[0].value == "Nenhuma linha falta revisar."
+    nova = conexao.execute(
+        text("SELECT id FROM obra WHERE titulo = 'Um Livro Inexistente' AND origem = 'leitor'")
+    ).scalar_one()
+    leitura = estante.leitura_da_obra(conexao, LEITOR_ID, nova)
+    assert (leitura.nota, leitura.origem) == (4, "importacao")
+
+
+def test_importar_pular_guarda_a_linha(conexao: Connection) -> None:
+    previa = estante.preparar_importacao(
+        conexao, LEITOR_ID, estante.ler_goodreads(_CSV_GOODREADS), None
+    )
+    at = _pagina("importar")
+    at.session_state["importar-previa"] = previa
+    at.run()
+    [importar] = [b for b in at.button if b.label == "Revisar as sem correspondência"]
+    importar.click().run()
+    [pular] = [b for b in at.button if b.label == "Pular"]
+    pular.click().run()
+
+    assert not at.exception
+    assert at.expander[-1].label == "Puladas (1)"
+    assert conexao.execute(text("SELECT count(*) FROM leitura")).scalar_one() == 0
