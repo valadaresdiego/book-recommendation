@@ -256,6 +256,28 @@ def test_dump_ausente(conexao: Connection, tmp_path: Path) -> None:
         enriquecer_ol(conexao, tmp_path)
 
 
+def test_edicao_do_leitor_da_o_titulo_quando_o_dump_nao_tem_edicao_em_portugues(
+    conexao: Connection, dumps: Path, obras: dict[str, int]
+) -> None:
+    """Como na carga técnica (§8.8), a Edição em português gravada pelo Leitor (§7.2)
+    continua dando o título de exibição se o dump não tem Edição em português; se tem,
+    vale a do dump. Sem isso, *As armas da persuasão* voltava a *Influence*."""
+    conexao.execute(
+        text("INSERT INTO edicao (obra_id, titulo, idioma) VALUES (:o, :t, 'pt')"),
+        [
+            {"o": obras["neuromancer"], "t": "Neuromancer"},
+            {"o": obras["neuromancer"], "t": "Neuromante (Em Portugues do Brasil)"},
+            {"o": obras["duna"], "t": "Duna: Edição especial"},
+        ],
+    )
+
+    enriquecer_ol(conexao, dumps)
+
+    assert _linha(conexao, obras["neuromancer"])["titulo_exibicao"] == "Neuromante"
+    assert _linha(conexao, obras["duna"])["titulo_exibicao"] == "Duna"
+    assert _linha(conexao, obras["fundacao"])["titulo_exibicao"] == "Foundation"
+
+
 def test_titulo_em_portugues_sem_o_ruido_do_idioma(conexao: Connection, tmp_path: Path) -> None:
     """O "(Em Portugues do Brasil)" das Edições importadas de livrarias não vai para o
     título de exibição; um parêntese que é do título fica."""
