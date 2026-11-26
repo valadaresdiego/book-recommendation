@@ -175,9 +175,12 @@ def resolver_obra(conn: Connection, resultado: ResultadoBusca, ol: OpenLibrary |
 
     edicao_ol, obra_ol = _consultar_open_library(ol, resultado.isbns)
     chave_ol = edicao_ol.chave if edicao_ol else None
+    idiomas_ol = edicao_ol.idiomas if edicao_ol else ()
     works = [*(edicao_ol.works[:1] if edicao_ol else ()), *([obra_ol.chave] if obra_ol else ())]
     if obra_id := _por_work(conn, works):
-        return Resolucao("ol_work", edicao, obra_id=obra_id, edicao_ol=chave_ol)
+        return Resolucao(
+            "ol_work", edicao, obra_id=obra_id, edicao_ol=chave_ol, idiomas_ol=idiomas_ol
+        )
 
     titulos = [
         *([edicao_ol.traducao_de] if edicao_ol and edicao_ol.traducao_de else []),
@@ -187,7 +190,9 @@ def resolver_obra(conn: Connection, resultado: ResultadoBusca, ol: OpenLibrary |
         resultado.titulo,
     ]
     if obra_id := _por_titulo_original(conn, titulos, resultado.autores):
-        return Resolucao("titulo_original", edicao, obra_id=obra_id, edicao_ol=chave_ol)
+        return Resolucao(
+            "titulo_original", edicao, obra_id=obra_id, edicao_ol=chave_ol, idiomas_ol=idiomas_ol
+        )
 
     proposta = _proposta(resultado, edicao_ol, obra_ol)
     return Resolucao(
@@ -196,6 +201,7 @@ def resolver_obra(conn: Connection, resultado: ResultadoBusca, ol: OpenLibrary |
         obra_nova=proposta,
         candidatas=_candidatas(conn, proposta.titulo_exibicao, proposta.autores),
         edicao_ol=chave_ol,
+        idiomas_ol=idiomas_ol,
     )
 
 
@@ -362,8 +368,7 @@ def registrar_resolucao(
             ),
             {"t": titulo_sem_ruido(edicao.titulo), "o": obra_id},
         )
-    edicao_ol = resolucao.edicao_ol
-    if edicao.idioma == "pt" or (edicao_ol is not None and "por" in edicao_ol.idiomas):
+    if edicao.idioma == "pt" or "por" in resolucao.idiomas_ol:
         # O filtro de idioma de "Para você" (R10, SPEC §8.6).
         conn.execute(text("UPDATE obra SET tem_edicao_pt = true WHERE id = :o"), {"o": obra_id})
     # A Obra do Leitor não tem tags de leitores: o Gênero vem das categorias da Edição (§6.3).

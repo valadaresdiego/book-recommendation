@@ -5,6 +5,7 @@ goodbooks ficou ligada a uma work duplicada da Open Library (`OL2918756W`), e n�
 canônica (`OL893414W`); por isso a *Duna* da Aleph chega a *Dune* pela regra 3.
 """
 
+import dataclasses
 import json
 
 import httpx
@@ -238,6 +239,18 @@ def test_edicao_em_portugues_vira_o_titulo_de_exibicao_se_nao_houver(
     registrar_resolucao(conexao, resolver_obra(conexao, duna_aleph, ol))
     assert linha(conexao, "obra", dune)["titulo_exibicao"] == "Duna"
     assert linha(conexao, "obra", dune)["tem_edicao_pt"]  # o filtro de idioma (R10)
+
+
+def test_edicao_em_portugues_so_pela_open_library_marca_a_obra(
+    conexao: Connection, ol: OpenLibrary, duna_aleph: ResultadoBusca
+) -> None:
+    """O Google Books nem sempre diz o idioma da Edição; a Open Library diz `por`."""
+    dune = _dune(conexao)
+    sem_idioma = dataclasses.replace(duna_aleph, idioma=None)
+
+    registrar_resolucao(conexao, resolver_obra(conexao, sem_idioma, ol))
+
+    assert linha(conexao, "obra", dune)["tem_edicao_pt"]
 
 
 def test_nao_troca_titulo_de_exibicao_que_ja_esta_em_portugues(
