@@ -75,6 +75,7 @@ class Resolucao:
     obra_nova: ObraProposta | None = None  # regra 4
     candidatas: tuple[Candidata, ...] = field(default=())
     edicao_ol: str | None = None  # chave da Edição na Open Library (/books/OL…M), se achada
+    idiomas_ol: tuple[str, ...] = ()  # idiomas dessa Edição na Open Library (MARC: por, eng...)
 
     @property
     def encontrou(self) -> bool:
