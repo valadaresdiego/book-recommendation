@@ -697,7 +697,7 @@ Como o `atualizar` roda a cada abertura, o limite de 10 min vale como atraso má
 |---|---|---|
 | Para você | Seletor "Para você" / "Tecnologia" (§8.8) e filtros no topo. Até 20 Sugestões em cards (capa, título, autor, Motivo, "Por quê?", "Quero ler", "Comecei a ler", "Já li", "Não tenho interesse"). | R4, R7, R8, R10, R11, R13, R14 |
 | Estou lendo | As Obras em leitura, com "Já li" e "Parei de ler". Vazia: chamada para Quero ler. | R13 |
-| Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista". A busca do §7.1, só com "Quero ler": atrás do toggle "Buscar livro" e aberta quando a lista está vazia, ao lado da chamada para "Para você". | R1, R8, R13 |
+| Quero ler | As Obras salvas, com "Comecei a ler", "Já li" e "Tirar da lista", separadas pelo seletor "Geral" / "Tecnologia" (as Obras técnicas, §8.8), cada um com a contagem. A busca do §7.1, só com "Quero ler": atrás do toggle "Buscar livro" e aberta quando a lista está vazia, ao lado da chamada para "Para você". | R1, R8, R13 |
 | Estante | §7.5 | R3 |
 | Adicionar | Busca (§7.1) → escolha → "É uma destas?" se necessário → Nota → salvar, ou "Quero ler" sem Nota. Também tem o cadastro manual. | R1, R2, R8 |
 | Montagem da Estante | §7.4 | — |

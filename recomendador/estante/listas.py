@@ -15,6 +15,7 @@ from datetime import datetime
 
 from sqlalchemy import Connection, text
 
+from recomendador.catalogo.generos import SLUG_TECNOLOGIA
 from recomendador.estante.eventos import registrar_evento
 from recomendador.estante.leituras import JaNaEstante, leitura_da_obra
 
@@ -27,6 +28,7 @@ class ItemDeLista:
     capa_url: str | None  # a da Edição escolhida na busca, ou a da Obra
     posicao: int | None  # posição em "Para você" quando foi salva; nula fora de lá
     criado_em: datetime  # quando entrou na lista
+    tecnica: bool  # Obra técnica (Gênero "Tecnologia"): separa as abas de Quero ler
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,9 @@ def _consultar(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int
         text(
             f"""
             SELECT q.obra_id, o.titulo_exibicao AS titulo, o.autores,
-                   coalesce(e.capa_url, o.capa_url) AS capa_url, q.posicao, q.criado_em
+                   coalesce(e.capa_url, o.capa_url) AS capa_url, q.posicao, q.criado_em,
+                   EXISTS (SELECT 1 FROM obra_genero og JOIN genero g ON g.id = og.genero_id
+                           WHERE og.obra_id = o.id AND g.slug = :tecnologia) AS tecnica
             FROM {tabela} q
             JOIN obra o ON o.id = q.obra_id
             LEFT JOIN edicao e ON e.id = q.edicao_id
@@ -85,7 +89,7 @@ def _consultar(conn: Connection, tabela: str, leitor_id: uuid.UUID, obra_id: int
             ORDER BY q.criado_em DESC, q.obra_id DESC
             """
         ),
-        {"l": leitor_id, "o": obra_id},
+        {"l": leitor_id, "o": obra_id, "tecnologia": SLUG_TECNOLOGIA},
     )
 
 

@@ -548,6 +548,42 @@ def test_quero_ler_com_itens_esconde_a_busca(conexao: Connection) -> None:
     assert at.text_input[0].label == "Título, autor ou ISBN"
 
 
+def _titulos_em_quero_ler(at: AppTest) -> list[str]:
+    return [b.label for b in at.button if b.key and b.key.startswith("ql-abrir-")]
+
+
+def test_quero_ler_separa_geral_e_tecnologia(conexao: Connection) -> None:
+    tecnologia = criar_genero(conexao, "tecnologia", "Tecnologia")
+    duna = criar_obra(conexao, "Dune", ("Frank Herbert",), titulo_exibicao="Duna")
+    ddd = criar_obra(conexao, "Domain-Driven Design", ("Eric Evans",), origem="open_library")
+    ligar_genero(conexao, ddd, tecnologia)
+    estante.salvar_quero_ler(conexao, LEITOR_ID, duna)
+    estante.salvar_quero_ler(conexao, LEITOR_ID, ddd)
+
+    at = _pagina("quero_ler").run()
+
+    assert not at.exception
+    assert "2 livros na lista." in [c.value for c in at.caption]
+    assert _titulos_em_quero_ler(at) == ["**Duna**"]
+
+    at.segmented_control(key="ql-lista").set_value("tecnologia").run()
+
+    assert not at.exception
+    assert _titulos_em_quero_ler(at) == ["**Domain-Driven Design**"]
+
+
+def test_quero_ler_sem_obras_tecnicas_avisa_na_aba(conexao: Connection) -> None:
+    duna = criar_obra(conexao, "Dune", ("Frank Herbert",), titulo_exibicao="Duna")
+    estante.salvar_quero_ler(conexao, LEITOR_ID, duna)
+    at = _pagina("quero_ler").run()
+
+    at.segmented_control(key="ql-lista").set_value("tecnologia").run()
+
+    assert not at.exception
+    assert at.info[0].value == "Nenhum livro técnico na lista."
+    assert _titulos_em_quero_ler(at) == []
+
+
 def test_candidata_ja_em_quero_ler_avisa_com_o_titulo_dela(conexao: Connection) -> None:
     """`registrar_resolucao` troca o título da Obra dentro da transação (Edição em
     português, §7.2); o aviso, depois de desfeita, mostra o título que ficou."""

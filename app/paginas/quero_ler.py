@@ -2,6 +2,9 @@
 
 A busca entra aqui também, só com o botão "Quero ler": aberta com a lista vazia, atrás de um
 toggle quando não está.
+
+O seletor "Geral" / "Tecnologia" separa as Obras técnicas (Gênero "Tecnologia"), como em
+"Para você" (§8.8).
 """
 
 import streamlit as st
@@ -18,6 +21,13 @@ from componentes import (
 )
 
 from recomendador import estante
+
+GERAL, TECNOLOGIA = "geral", "tecnologia"
+ROTULOS = {GERAL: "Geral", TECNOLOGIA: "Tecnologia"}
+
+
+def _livros(n: int) -> str:
+    return "1 livro" if n == 1 else f"{n} livros"
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -38,15 +48,37 @@ if not itens:
     busca_e_adicionar("quero_ler", destino="quero_ler")
     st.stop()
 
-st.caption("1 livro na lista." if len(itens) == 1 else f"{len(itens)} livros na lista.")
+st.caption(f"{_livros(len(itens))} na lista.")
 if busca_tem_aviso("quero_ler"):
     st.session_state["ql-buscar"] = True  # a mensagem de "entrou na lista" aparece na busca
 if st.toggle("Buscar livro", key="ql-buscar"):
     with st.container(border=True):
         busca_e_adicionar("quero_ler", destino="quero_ler")
 
+por_lista = {
+    GERAL: [i for i in itens if not i.tecnica],
+    TECNOLOGIA: [i for i in itens if i.tecnica],
+}
+lista = (
+    st.segmented_control(
+        "Lista",
+        list(ROTULOS),
+        format_func=lambda c: f"{ROTULOS[c]} ({len(por_lista[c])})",
+        default=GERAL,
+        key="ql-lista",
+        label_visibility="collapsed",
+    )
+    or GERAL  # desmarcar o botão escolhido volta para a lista geral
+)
+if not por_lista[lista]:
+    st.info(
+        "Nenhum livro técnico na lista."
+        if lista == TECNOLOGIA
+        else "Só há livros técnicos na lista."
+    )
+
 posicoes = st.session_state.setdefault("posicao-da-sugestao", {})
-for item in itens:
+for item in por_lista[lista]:
     if item.posicao is not None:
         # Veio de "Para você": o "Já li" grava com origem 'sugestao' (O5, §8.6).
         posicoes.setdefault(item.obra_id, item.posicao)
