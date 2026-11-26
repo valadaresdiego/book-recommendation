@@ -1,5 +1,5 @@
 """Estante: Leituras, Notas, Montagem da Estante, Eventos (SPEC §7), Dispensa e Quero ler
-(§8.6), Estou lendo (§8.7) e a Importação do histórico do Goodreads (§8.9).
+(§8.6) e Estou lendo (§8.7).
 
 O `app/` usa só o que está exportado aqui. Todas as funções recebem uma `Connection` e não
 fazem commit: quem chama abre a transação (`transacao()`).
@@ -8,19 +8,6 @@ fazem commit: quem chama abre a transação (`transacao()`).
 from recomendador.config import LEITOR_ID
 from recomendador.db.sessao import transacao
 from recomendador.estante.eventos import TIPOS_DE_EVENTO, registrar_evento
-from recomendador.estante.importacao import (
-    ArquivoInvalido,
-    Desfecho,
-    LinhaImportada,
-    LinhaResolvida,
-    ObraJaNaEstante,
-    Previa,
-    Relatorio,
-    importar,
-    importar_linha,
-    ler_goodreads,
-    preparar_importacao,
-)
 from recomendador.estante.leituras import (
     ItemEstante,
     JaNaEstante,
@@ -63,30 +50,20 @@ __all__ = [
     "NOTAS_PARA_SUGESTOES",
     "OBRAS_POR_PAGINA",
     "TIPOS_DE_EVENTO",
-    "ArquivoInvalido",
     "CardMontagem",
-    "Desfecho",
     "ItemEstante",
     "ItemEstouLendo",
     "ItemQueroLer",
     "JaEmQueroLer",
     "JaNaEstante",
     "Leitura",
-    "LinhaImportada",
-    "LinhaResolvida",
-    "ObraJaNaEstante",
-    "Previa",
-    "Relatorio",
     "adicionar",
     "contar_notas",
     "desfazer_dispensa",
     "dispensada",
     "dispensar",
     "grade_da_montagem",
-    "importar",
-    "importar_linha",
     "leitura_da_obra",
-    "ler_goodreads",
     "listar",
     "listar_estou_lendo",
     "listar_quero_ler",
@@ -94,7 +71,6 @@ __all__ = [
     "mudar_nota",
     "na_lista_estou_lendo",
     "na_lista_quero_ler",
-    "preparar_importacao",
     "pular_montagem",
     "quero_ler_da_obra",
     "registrar_evento",

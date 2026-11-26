@@ -42,7 +42,6 @@ A v1 roda **só no computador do Leitor**, sem login: interface em Streamlit, Po
 | **Adicionar** | Busca por título, autor ou ISBN (Google Books e Open Library), Resolução da Edição para a Obra com "É uma destas?" quando é preciso, e cadastro manual. |
 | **Estante** | As Leituras ordenadas por Nota ou por data; mudar a Nota ou remover reflete nas Sugestões na hora. |
 | **Quero ler** / **Estou lendo** | Listas separadas da Estante. "Estou lendo" só diz que a Obra foi começada: sem página, percentual nem prazo ([ADR 0008](docs/adr/0008-estou-lendo-sem-progresso.md)). |
-| **Importar** | Histórico de um CSV exportado do Goodreads: prévia, relatório e revisão das linhas sem correspondência ([ADR 0011](docs/adr/0011-importacao-do-goodreads.md)). |
 | **Montagem da Estante** | O primeiro passo com a Estante vazia: escolher Gêneros e dar Nota a Obras populares até ter Notas suficientes. |
 
 Uma Sugestão dispensada ("Não tenho interesse") não volta a "Para você", e a Dispensa pode ser desfeita na página da Obra.
@@ -96,12 +95,12 @@ A mistura supera o melhor critério isolado (Δ NDCG@20 +0,0041, IC [0,0031; 0,0
                                          │
 ┌──────────── app/ (Streamlit, 127.0.0.1:8501) ────────────┐
 │ Para você · Estou lendo · Quero ler · Estante · Adicionar │   só chama funções públicas ↓
-│ Importar · Montagem da Estante · Obra                     │
+│ Montagem da Estante · Obra                                │
 └───────────────────────────────────────────────────────────┘
 ┌──────────────────────── recomendador/ ────────────────────────────────┐
 │ catalogo/      busca, Resolução Edição → Obra, Gêneros                 │
 │   └ fontes/    único lugar com HTTP externo (Google Books, Open Library)│
-│ estante/       Leituras, Notas, listas, Montagem, Importação, Eventos  │
+│ estante/       Leituras, Notas, listas, Montagem, Eventos              │
 │ recomendacao/  embeddings, pontuação, Motivo, Ponto em comum           │
 │ pipeline/      cálculo em lote: carga, enriquecimento, Vizinhos, avaliação │
 │ db/            modelos SQLAlchemy, sessão, migrações                   │

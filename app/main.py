@@ -16,7 +16,6 @@ paginas = [
     st.Page("paginas/quero_ler.py", title="Quero ler", icon="🔖"),
     st.Page("paginas/estante.py", title="Estante", icon="📚"),
     st.Page("paginas/adicionar.py", title="Adicionar", icon="➕"),
-    st.Page("paginas/importar.py", title="Importar", icon="📥"),
     st.Page(
         "paginas/montagem.py", title="Montagem da Estante", icon="🧩", default=montagem_pendente
     ),

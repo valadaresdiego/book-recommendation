@@ -1,5 +1,7 @@
 # A importação de histórico começa pelo Goodreads, sem guardar estado
 
+> **Retirada em 26/11/2026.** O Leitor não tem conta no Goodreads e não vai usá-lo. Veja a atualização no fim.
+
 O R9 (PRD §5, P2) pede importar o histórico de Leituras de um CSV do Goodreads, das notas do Hardcover ou de uma planilha do Skoob. Ele pede ≥ 90 % das linhas com correspondência importadas, e as que falharem mostradas para o Leitor resolver à mão. A pesquisa de 26/11/2026 ([research/formatos-de-exportacao.md](../research/formatos-de-exportacao.md)) achou um formato conhecido só no Goodreads. O arquivo do Hardcover não tem amostra nem colunas documentadas, e o Skoob não exporta.
 
 Decisões do Leitor, em 26/11/2026:
@@ -26,3 +28,15 @@ Decisões do Leitor, em 26/11/2026:
 - Um evento novo, `historico_importado`, com as contagens de cada importação.
 - `estante` passa a usar `catalogo` (`resolver_obra` e `registrar_resolucao`) na importação. Antes, só o `app/` juntava os dois.
 - Os ISBNs do arquivo entram em `obra_isbn` com `origem='leitor'` nas linhas importadas, como os de uma Edição escolhida na busca. Uma reimportação resolve pela regra 1, sem a Open Library.
+
+## Atualização (26/11/2026): importação retirada
+
+O Leitor não tem conta no Goodreads e não vai usá-lo. Como o Hardcover e o Skoob também não têm um arquivo real (acima), a importação não tinha uso, e o código dela saiu do app:
+
+- Saíram a página Importar, `estante/importacao.py`, os testes, o CSV de teste e as funções "É uma destas?" fora da busca em `app/componentes.py`.
+- Saiu o evento `historico_importado`. O indicador "1ª semana" de `reports/consultas-metricas.sql` voltou a contar todas as Leituras.
+- A migração 0013 recria o enum `origem_leitura` sem `importacao`, porque o Postgres não remove um valor de um enum. Ela se recusa a rodar se houver uma Leitura com essa origem; no banco do app não havia nenhuma.
+- A migração 0011 continua no histórico, porque já foi aplicada.
+- O `registrar_isbns`, extraído para a importação, ficou privado em `catalogo/resolucao.py`.
+
+Se um formato de exportação voltar a ser útil, as decisões acima continuam valendo como ponto de partida. O código está no histórico do git (PR 25).

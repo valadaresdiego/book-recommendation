@@ -20,9 +20,6 @@ TIPOS_DE_EVENTO = frozenset(
         "sugestao_dispensada",  # {posicao, lista}: O2 (R7)
         "quero_ler_salvo",  # {posicao, lista}: O2 (R8)
         "leitura_iniciada",  # {posicao}: R13 ("Comecei a ler")
-        # {fonte, linhas, leituras, quero_ler, estou_lendo, ja_na_estante, repetidas,
-        #  sem_correspondencia, ignoradas}: uma vez por Importação (R9, §8.9)
-        "historico_importado",
     }
 )
 

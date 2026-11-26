@@ -306,9 +306,9 @@ def _gravar_edicao(
     ).scalar_one()
 
 
-def registrar_isbns(conn: Connection, obra_id: int, isbns: tuple[str, ...]) -> None:
+def _registrar_isbns(conn: Connection, obra_id: int, isbns: tuple[str, ...]) -> None:
     """Os ISBNs de uma Edição que o Leitor pôs na Obra passam a apontar para ela, com origem
-    `leitor`: a próxima busca ou Importação resolve pela regra 1, e o `enriquecer-ol` não os
+    `leitor`: a próxima busca resolve pela regra 1, e o `enriquecer-ol` não os
     apaga. Um ISBN que já estava lá com origem `open_library` também passa a ser do Leitor;
     um de origem `base` ou `leitor` fica com a Obra que tem."""
     if isbns:
@@ -351,7 +351,7 @@ def registrar_resolucao(
         return ObraRegistrada(obra_id, None)
 
     edicao_id = _gravar_edicao(conn, obra_id, edicao, resolucao.edicao_ol)
-    registrar_isbns(conn, obra_id, edicao.isbns)
+    _registrar_isbns(conn, obra_id, edicao.isbns)
     if edicao.idioma == "pt":
         # Uma Obra que já tem Edição em português já tem o título dela, mesmo igual ao
         # canônico (*1984*, uma Obra do Leitor como *Torto Arado*): a outra Edição não o troca.
