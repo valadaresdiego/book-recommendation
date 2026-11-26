@@ -10,6 +10,8 @@ PALAVRAS_VAZIAS = frozenset(
 )
 # Sufixos que não são sobrenome ("Itamar Vieira Junior", "Martin Luther King Jr.").
 _SUFIXOS = frozenset("jr junior filho neto sobrinho sr ii iii iv".split())
+# Títulos no início do nome ("Dr. Yuxing Yan", "Prof. Diwakar Vaish"), que não são o primeiro nome.
+_TITULOS = frozenset("dr dra prof profa".split())
 # O filtro de editora da busca (SPEC §7.1), com aspas retas ou curvas para mais de uma palavra.
 _RE_EDITORA = re.compile(r'\beditora:\s*(?:"([^"]*)"|“([^”]*)”|(\S+))', re.IGNORECASE)
 
@@ -50,9 +52,22 @@ def sobrenome(nome: str) -> str | None:
     return partes[-1] if partes else None
 
 
+def _sem_titulo(partes: list[str]) -> list[str]:
+    """As partes do nome sem o título do início ("Dr.", "Prof."), se sobrarem duas ou mais.
+
+    Com uma só, o título é do nome: o Dr. Seuss não vira "Seuss".
+    """
+    if len(partes) > 2 and partes[0] in _TITULOS:
+        return partes[1:]
+    return partes
+
+
 def chave_do_autor(nome: str) -> tuple[str, str | None] | None:
-    """(primeiro nome, sobrenome): "Kevin E. Kline" e "Kevin Kline" dão a mesma chave."""
-    partes = normalizar(nome).split()
+    """(primeiro nome, sobrenome): "Kevin E. Kline" e "Kevin Kline" dão a mesma chave.
+
+    O título do início não conta: "Dr. Yuxing Yan" e "Yuxing Yan" também.
+    """
+    partes = _sem_titulo(normalizar(nome).split())
     return (partes[0], sobrenome(nome)) if partes else None
 
 
@@ -60,14 +75,19 @@ def sem_autores_repetidos(nomes: list[str]) -> list[str]:
     """Um nome por autor, na ordem da primeira vez que aparece.
 
     Dois nomes são o mesmo autor se têm o mesmo primeiro nome e o mesmo sobrenome
-    ("Kevin E. Kline" e "Kevin Kline"); fica a forma mais completa.
+    ("Kevin E. Kline" e "Kevin Kline"); fica a forma mais completa. O título do início não
+    conta no tamanho: entre "Yuxing Yan" e "Dr. Yuxing Yan", fica o que veio primeiro.
     """
+
+    def tamanho(nome: str) -> int:
+        return len(" ".join(_sem_titulo(normalizar(nome).split())))
+
     por_chave: dict[tuple[str, str | None], str] = {}
     for nome in nomes:
         if (chave := chave_do_autor(nome)) is None:
             continue
         atual = por_chave.get(chave)
-        if atual is None or len(normalizar(nome)) > len(normalizar(atual)):
+        if atual is None or tamanho(nome) > tamanho(atual):
             por_chave[chave] = nome
     return list(por_chave.values())
 
